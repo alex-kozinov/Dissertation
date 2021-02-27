@@ -60,9 +60,9 @@
 \vspace{0pt plus4fill} %число перед fill = кратность относительно некоторого расстояния fill, кусками которого заполнены пустые места
 \begin{flushright}
 \ifdefined\supervisorTwoFio
-Научные руководители:
+Научные руководитель:
 
-\supervisorRegalia
+%% \supervisorRegalia
 
 \ifdefined\supervisorDead
 \framebox{\supervisorFio}
@@ -70,7 +70,9 @@
 \supervisorFio
 \fi
 
-\supervisorTwoRegalia
+Консультант:
+
+%% \supervisorTwoRegalia
 
 \ifdefined\supervisorTwoDead
 \framebox{\supervisorTwoFio}
@@ -80,14 +82,13 @@
 \else
 Научный руководитель:
 
-\supervisorRegalia
-
 \ifdefined\supervisorDead
 \framebox{\supervisorFio}
 \else
 \supervisorFio
 \fi
 \fi
+
 
 \end{flushright}
 %
