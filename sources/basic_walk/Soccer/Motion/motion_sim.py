@@ -72,7 +72,7 @@ class MotionSim(object):
         self.step_length = 0.0  # -50 - +70. Best choise 64 for forward. Maximum safe value for backward step -50.
         self.side_length = 0.0  # -20 - +20. Side step length to right (+) and to left (-)
         self.rotation = 0  # -45 - +45 degrees Centigrade per step + CW, - CCW.
-        self.first_leg_is_right = False
+        self.first_leg_is_right = True
 
         # Following paramenetrs Not recommended for change
         self.amplitude = 32  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
@@ -151,58 +151,59 @@ class MotionSim(object):
         angles_r = self.alpha.compute_alpha_v3(self.xtr, self.ytr, self.ztr, self.xr, self.yr, self.zr, self.wr, self.SIZES, self.LIM_ALPHA)
         angles_l = self.alpha.compute_alpha_v3(self.xtl, -self.ytl, self.ztl, self.xl, -self.yl, self.zl, self.wl, self.SIZES, self.LIM_ALPHA)
 
-        if len(angles_r)>1:
-            for i in range(len(angles_r)):
-                if len(angles_r)==1: break
-                if angles_r[0][2]<angles_r[1][2]: angles_r.pop(1)
-                else: angles_r.pop(0)
-        elif len(angles_r)==0:
-            return[]
-        if len(angles_l)>1:
-            for i in range(len(angles_l)):
-                if len(angles_l)==1: break
-                if angles_l[0][2]<angles_l[1][2]: angles_l.pop(1)
-                else: angles_l.pop(0)
-        elif len(angles_l)==0:
-            return[]
-        if self.first_leg_is_right == True:
-            for j in range(6): angles.append(angles_r[0][j])
-            if hands_on: angles.append(1.745)
-            else: angles.append(0.0)
-            angles.append(0.0)
-            angles.append(0.0)
-            if hands_on: angles.append(0.524 - self.xtl/57.3)
-            else: angles.append(0.0)
-            angles.append(0.0)
-            for j in range(6): angles.append(-angles_l[0][j])
-            if hands_on: angles.append(-1.745)
-            else: angles.append(0.0)
-            angles.append(0.0)
-            angles.append(0.0)
-            if hands_on: angles.append(-0.524 + self.xtr/57.3)
-            else: angles.append(0.0)
-        else:
-            for j in range(6): angles.append(angles_l[0][j])
-            if hands_on: angles.append(1.745)
-            else: angles.append(0.0)
-            angles.append(0.0)
-            angles.append(0.0)
-            if hands_on: angles.append(0.524 - self.xtr/57.3)
-            else: angles.append(0.0)
-            angles.append(0.0)                                  # Tors
-            for j in range(6): angles.append(-angles_r[0][j])
-            if hands_on: angles.append(-1.745)
-            else: angles.append(0.0)
-            angles.append(0.0)
-            angles.append(0.0)
-            if hands_on: angles.append(-0.524 + self.xtl/57.3)
-            else: angles.append(0.0)
+        if not len(angles_r) or not len(angles_l):
+            print("AAAAAAAA")
+            return []
 
+        for i in range(len(angles_r)):
+            if len(angles_r) == 1:
+                break
+            if angles_r[0][2] < angles_r[1][2]:
+                angles_r.pop(1)
+            else:
+                angles_r.pop(0)
+
+        for i in range(len(angles_l)):
+            if len(angles_l) == 1:
+                break
+            if angles_l[0][2] < angles_l[1][2]:
+                angles_l.pop(1)
+            else:
+                angles_l.pop(0)
+
+        if self.first_leg_is_right:
+            angles_l, angles_r = angles_r, angles_l
+
+        for j in range(6):
+            angles.append(angles_l[0][j])
+        if hands_on:
+            angles.append(1.745)
+        else:
+            angles.append(0.0)
+        angles.append(0.0)
+        angles.append(0.0)
+        if hands_on:
+            angles.append(0.524 - self.xtr / 57.3)
+        else:
+            angles.append(0.0)
+        angles.append(0.0)
+        for j in range(6):
+            angles.append(-angles_r[0][j])
+        if hands_on:
+            angles.append(-1.745)
+        else:
+            angles.append(0.0)
+        angles.append(0.0)
+        angles.append(0.0)
+        if hands_on:
+            angles.append(-0.524 + self.xtl / 57.3)
+        else:
+            angles.append(0.0)
         return angles
 
-    def step_length_planer(self, regularStepLength, regularSideLength, framestep, hovernum):
+    def step_length_planer(self, regular_step_length, regular_side_length, framestep, hovernum):
         if self.step_length_planer_is_on == True:
-            stepLength1 = regularStepLength
+            stepLength1 = regular_step_length
             if - 0.08 <= self.body_euler_angle['pitch'] < - 0.045:
                 #stepLength1 += (-self.body_euler_angle['pitch']) * 2000
                 if stepLength1 > 140: stepLength1 = 140
@@ -229,13 +230,13 @@ class MotionSim(object):
             if self.modified_roll < -0.2 :
                 sideLength = -60
                 print('sideLength = ', sideLength)
-            else: sideLength = regularSideLength
+            else: sideLength = regular_side_length
             dy0 = sideLength / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
-            dy = sideLength /(self.fr2 - hovernum * framestep) * framestep
+            dy = sideLength /(self.fregular_side_lengthr2 - hovernum * framestep) * framestep
         else:
-            xt0 = regularStepLength /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-            dy0 = regularSideLength / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
-            dy = regularSideLength /(self.fr2 - hovernum * framestep) * framestep
+            xt0 = regular_step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
+            dy0 = regular_side_length / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
+            dy = regular_side_length /(self.fr2 - hovernum * framestep) * framestep
         return xt0, dy0, dy
 
     def feet_action(self):
