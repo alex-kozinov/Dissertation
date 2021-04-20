@@ -33,7 +33,6 @@ class Player(object):
 
     def common_init(self):
         self.motion.activation()
-        self.motion.falling_Flag = 0
 
     def balancing_test_main_cycle(self):
         self.motion.amplitude = 20
