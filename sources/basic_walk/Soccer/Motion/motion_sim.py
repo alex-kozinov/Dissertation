@@ -81,17 +81,12 @@ class MotionSim(object):
         self.gait_height = 190  # Distance between Center of mass and floor in walk pose
         self.step_height = 32.0  # elevation of sole over floor
         self.init_poses = 400 // self.sim_thread_cycle_in_ms
-
-        #  end of  paramenetrs Not recommended for change
         self.alpha = Alpha()
         self.exit_flag = 0
         self.falling_flag = 0
         self.neck_pan = 0
-        self.old_neck_pan = 0
         self.body_euler_angle = {}
-        self.old_neck_tilt = 0
-        self.direction_To_Attack = 0
-        self.activePose = []
+        self.direction_to_attack = 0
         self.xtr = 0
         self.ytr = -self.d10  # -53.4
         self.ztr = -self.gait_height
@@ -199,7 +194,7 @@ class MotionSim(object):
             angles.append(0.0)
             if hands_on: angles.append(-0.524 + self.xtl/57.3)
             else: angles.append(0.0)
-        self.activePose = angles
+
         return angles
 
     def step_length_planer(self, regularStepLength, regularSideLength, framestep, hovernum):
@@ -282,9 +277,9 @@ class MotionSim(object):
         self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
         returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
         self.euler_angle = self.quaternion_to_euler_angle(Dummy_Hquaternion)
-        self.direction_To_Attack += self.euler_angle['yaw']
+        self.direction_to_attack += self.euler_angle['yaw']
 
-        self.direction_To_Attack = self.norm_yaw(self.direction_To_Attack)
+        self.direction_to_attack = self.norm_yaw(self.direction_to_attack)
 
     def walk_initial_pose(self):
         self.robot_In_0_Pose = False
@@ -507,7 +502,7 @@ class MotionSim(object):
     def refresh_orientation(self):
         returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
         self.euler_angle = self.quaternion_to_euler_angle(Dummy_Hquaternion)
-        self.euler_angle['yaw'] -= self.direction_To_Attack
+        self.euler_angle['yaw'] -= self.direction_to_attack
 
     def normalize_rotation(self, yaw):
         if abs(yaw) > 2 * math.pi: yaw %= (2 * math.pi)
@@ -534,9 +529,9 @@ class MotionSim(object):
         self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
         returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
         self.euler_angle = self.quaternion_to_euler_angle(Dummy_Hquaternion)
-        self.direction_To_Attack += self.euler_angle['yaw']
+        self.direction_to_attack += self.euler_angle['yaw']
 
-        self.direction_To_Attack = self.norm_yaw(self.direction_To_Attack)
+        self.direction_to_attack = self.norm_yaw(self.direction_to_attack)
 
     def sim_start(self):
         sim.simxFinish(-1) # just in case, close all opened connections
@@ -550,7 +545,6 @@ class MotionSim(object):
             self.joint_handle.append(handle)
             returnCode, position= sim.simxGetJointPosition(self.client_id, handle, sim.simx_opmode_blocking)
             self.trims.append(position)
-            self.activePose.append(position)
         sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_streaming)
 
 
