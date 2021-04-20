@@ -18,18 +18,23 @@ else:
     import starkit
     sys.path.append('/')
 
-sys.path.append( current_work_directory + 'Soccer/')
-sys.path.append( current_work_directory + 'Soccer/Motion/')
+sys.path.append(current_work_directory + 'Soccer/')
+sys.path.append(current_work_directory + 'Soccer/Motion/')
 
 
-from class_Motion import *
-from class_Motion import MotionBase
 from compute_Alpha_v3 import Alpha
 import random as random
 import sim as vr
 import numpy as np
 import matplotlib.pyplot as plt
 import keyboard as keyboard
+
+
+class Glob:
+    def __init__(self, current_work_directory):
+        self.current_work_directory = current_work_directory
+        with open(current_work_directory + "Soccer/Init_params/Sim/Sim_params.json", "r") as f:
+            self.params = json.loads(f.read())
 
 
 class MotionSim(object):

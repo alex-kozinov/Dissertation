@@ -1,5 +1,3 @@
-
-
 import sys
 import os
 import math
@@ -14,10 +12,8 @@ current_work_directory += '/'
 sys.path.append(current_work_directory + 'Soccer/')
 sys.path.append(current_work_directory + 'Soccer/Motion/')
 
-from class_Motion import Glob
-from class_Motion import *
-from class_Motion_sim import*
-from class_Motion_sim import MotionSim
+
+from motion_sim import Glob, MotionSim
 
 
 class Player(object):
