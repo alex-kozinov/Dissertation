@@ -45,7 +45,7 @@ class Player(object):
         stepLength = 64
         sideLength = 0
 
-        if self.motion.first_Leg_Is_Right_Leg:
+        if self.motion.first_leg_is_right:
             invert = -1
         else:
             invert = 1

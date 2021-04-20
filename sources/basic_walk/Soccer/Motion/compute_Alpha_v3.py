@@ -2,8 +2,7 @@ import math, time
 
 #@micropython.native
 class Alpha():
-
-    def compute_Alpha_v3(self, xt,yt,zt,x,y,z,w, sizes, limAlpha):
+    def compute_alpha_v3(self, xt,yt,zt,x,y,z,w, sizes, limAlpha):
         from math import sqrt,cos,sin,asin,fabs,tan,atan
         #t1_start =time.perf_counter_ns()
         a5, b5, c5, a6, a7, a8, a9, a10, b10, c10 = sizes
@@ -150,32 +149,3 @@ class Alpha():
         #t1_stop =time.perf_counter_ns()
         #print('time t4 elapsed= ',(t1_stop-t1_start))
         return angles
-
-if __name__ == "__main__":
-    a5 = 21.5  # мм расстояние от оси симметрии до оси сервы 5
-    b5 = 18.5  # мм расстояние от оси сервы 5 до оси сервы 6 по горизонтали
-    c5 = 0     # мм расстояние от оси сервы 6 до нуля Z по вертикали
-    a6 = 42    # мм расстояние от оси сервы 6 до оси сервы 7
-    a7 = 65.5  # мм расстояние от оси сервы 7 до оси сервы 8
-    a8 = 63.8  # мм расстояние от оси сервы 8 до оси сервы 9
-    a9 = 35.5  # мм расстояние от оси сервы 9 до оси сервы 10
-    a10= 25.4  # мм расстояние от оси сервы 10 до центра стопы по горизонтали
-    b10= 16.4  # мм расстояние от оси сервы 10 до низа стопы
-    c10 = 12   # мм расстояние от оси сервы 6 до оси сервы 10 по горизонтали
-    sizes = [ a5, b5, c5, a6, a7, a8, a9, a10, b10, c10 ]
-
-    limAlpha5 = [-2667, 2667]
-    limAlpha6 = [-3000,  740]
-    limAlpha7 = [-3555, 3260]
-    limAlpha8 = [-4150, 1777]
-    limAlpha9 = [-4000, 2960]
-    limAlpha10 =[-2815,   600]
-    limAlpha = [limAlpha5, limAlpha6, limAlpha7, limAlpha8, limAlpha9, limAlpha10]
-
-    clock1 = time.clock()
-    clock1.tick()
-    compute_Alpha_v3(0,-54.3,-200,0,0,-1,0, sizes, limAlpha)
-    print('time elapsed in compute_Alpha:', clock1.avg())
-
-
-

@@ -6,28 +6,19 @@ import math, time, json
 
 current_work_directory = os.getcwd()
 current_work_directory = current_work_directory.replace('\\', '/')
-if sys.version != '3.4.0':
-    current_work_directory += '/'
-    with open("simulator_lib_directory.txt", "r") as f:
-        simulator_lib_directory = f.read()
-    simulator_lib_directory = simulator_lib_directory.replace('\\', '/')
-    sys.path.append(simulator_lib_directory)
-    import random
-    import sim, threading
-else:
-    import starkit
-    sys.path.append('/')
+current_work_directory += '/'
+
+with open("simulator_lib_directory.txt", "r") as f:
+    simulator_lib_directory = f.read()
+simulator_lib_directory = simulator_lib_directory.replace('\\', '/')
+sys.path.append(simulator_lib_directory)
+
 
 sys.path.append(current_work_directory + 'Soccer/')
 sys.path.append(current_work_directory + 'Soccer/Motion/')
 
-
+import sim
 from compute_Alpha_v3 import Alpha
-import random as random
-import sim as vr
-import numpy as np
-import matplotlib.pyplot as plt
-import keyboard as keyboard
 
 
 class Glob:
@@ -45,20 +36,10 @@ class MotionSim(object):
         self.joint_handle = []
         self.dummy_h_handle = 0
         self.dummy_1_handle = 0
-        self.position_o =[]
-        self.position_l = []
-        self.position_r = []
-        self.clientID = -1
+
+        self.client_id = -1
         self.sim_step_counter = 0
-        self.glob = glob
-        self.params = self.glob.params
-        self.ACTIVESERVOS = [(10, 2), (9, 2), (8, 2), (7, 2), (6, 2), (5, 2), (4, 2),
-                             (3, 2), (2, 2), (1, 2), (0, 2), (10, 1), (9, 1), (8, 1),
-                             (7, 1), (6, 1), (5, 1), (4, 1), (3, 1), (2, 1), (1, 1)]
-        # (10,2) Прав Стопа Вбок, (9,2) Прав Стопа Вперед,(8,2) Прав Голень, (7,2) Прав Колено,
-        # (6,2)  Прав Бедро,      (5,2) Прав Таз,         (1,2) Прав Ключица,(4,2) Прав Локоть, (0,2) Торс
-        # (10,1) Лев Стопа Вбок,  (9,1) Лев Стопа Вперед, (8,1) Лев Голень,  (7,1) Лев Колено
-        # (6,1)  Лев Бедро,       (5,1) Лев Таз,          (1,1) Лев Ключица, (4,1) Лев Локоть
+        self.params = glob.params
 
         self.FACTOR = [1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1]
 
@@ -88,24 +69,23 @@ class MotionSim(object):
         self.TIK2RAD = 0.00058909
         self.slow_time = 0.0  # seconds
         self.sim_thread_cycle_in_ms = 20
-        self.frame_delay = self.glob.params['FRAME_DELAY']
-        self.frames_per_cycle = self.glob.params['FRAMES_PER_CYCLE']
-        self.stepLength = 0.0  # -50 - +70. Best choise 64 for forward. Maximum safe value for backward step -50.
-        self.sideLength = 0.0  # -20 - +20. Side step length to right (+) and to left (-)
+        self.step_length = 0.0  # -50 - +70. Best choise 64 for forward. Maximum safe value for backward step -50.
+        self.side_length = 0.0  # -20 - +20. Side step length to right (+) and to left (-)
         self.rotation = 0  # -45 - +45 degrees Centigrade per step + CW, - CCW.
-        self.first_Leg_Is_Right_Leg = False
+        self.first_leg_is_right = False
+
         # Following paramenetrs Not recommended for change
         self.amplitude = 32  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
         self.fr1 = 8  # frame number for 1-st phase of gait ( two legs on floor)
         self.fr2 = 12  # frame number for 2-nd phase of gait ( one leg in air)
-        self.gaitHeight = 190  # Distance between Center of mass and floor in walk pose
-        self.stepHeight = 32.0  # elevation of sole over floor
-        self.initPoses = 400 // self.sim_thread_cycle_in_ms
+        self.gait_height = 190  # Distance between Center of mass and floor in walk pose
+        self.step_height = 32.0  # elevation of sole over floor
+        self.init_poses = 400 // self.sim_thread_cycle_in_ms
 
         #  end of  paramenetrs Not recommended for change
-        self.al = Alpha()
-        self.exitFlag = 0
-        self.falling_Flag = 0
+        self.alpha = Alpha()
+        self.exit_flag = 0
+        self.falling_flag = 0
         self.neck_pan = 0
         self.old_neck_pan = 0
         self.body_euler_angle = {}
@@ -114,14 +94,14 @@ class MotionSim(object):
         self.activePose = []
         self.xtr = 0
         self.ytr = -self.d10  # -53.4
-        self.ztr = -self.gaitHeight
+        self.ztr = -self.gait_height
         self.xr = 0
         self.yr = 0
         self.zr = -1
         self.wr = 0
         self.xtl = 0
         self.ytl = self.d10  # 53.4
-        self.ztl = -self.gaitHeight
+        self.ztl = -self.gait_height
         self.xl = 0
         self.yl = 0
         self.zl = -1
@@ -170,10 +150,8 @@ class MotionSim(object):
 
     def compute_alpha_for_walk(self, sizes, limAlpha, hands_on=True):
         angles =[]
-        anglesR=[]
-        anglesL=[]
-        anglesR = self.al.compute_Alpha_v3(self.xtr,self.ytr,self.ztr,self.xr,self.yr,self.zr,self.wr, sizes, limAlpha)
-        anglesL = self.al.compute_Alpha_v3(self.xtl,-self.ytl,self.ztl,self.xl,-self.yl,self.zl,self.wl, sizes, limAlpha)
+        anglesR = self.alpha.compute_alpha_v3(self.xtr,self.ytr,self.ztr,self.xr,self.yr,self.zr,self.wr, sizes, limAlpha)
+        anglesL = self.alpha.compute_alpha_v3(self.xtl,-self.ytl,self.ztl,self.xl,-self.yl,self.zl,self.wl, sizes, limAlpha)
 
         if len(anglesR)>1:
             for i in range(len(anglesR)):
@@ -189,7 +167,7 @@ class MotionSim(object):
                 else: anglesL.pop(0)
         elif len(anglesL)==0:
             return[]
-        if self.first_Leg_Is_Right_Leg == True:
+        if self.first_leg_is_right == True:
             for j in range(6): angles.append(anglesR[0][j])
             if hands_on: angles.append(1.745)
             else: angles.append(0.0)
@@ -198,9 +176,7 @@ class MotionSim(object):
             if hands_on: angles.append(0.524 - self.xtl/57.3)
             else: angles.append(0.0)
             angles.append(0.0)
-            #for j in range(5): angles.append(0.0)
             for j in range(6): angles.append(-anglesL[0][j])
-            #for j in range(4): angles.append(0.0)
             if hands_on: angles.append(-1.745)
             else: angles.append(0.0)
             angles.append(0.0)
@@ -266,24 +242,24 @@ class MotionSim(object):
 
     def feet_action(self):
         angles = self.compute_alpha_for_walk(self.SIZES, self.LIM_ALPHA )
-        if not self.falling_Flag ==0: return
+        if not self.falling_flag ==0: return
         if len(angles)==0:
-            self.exitFlag = self.exitFlag +1
+            self.exit_flag = self.exit_flag +1
             return False
         else:
             self.wait_sim_step()
-            sim.simxPauseCommunication(self.clientID, True)
+            sim.simxPauseCommunication(self.client_id, True)
             for i in range(len(angles)):
-                returnCode = sim.simxSetJointTargetPosition(self.clientID,
+                returnCode = sim.simxSetJointTargetPosition(self.client_id,
                             self.joint_handle[i] , angles[i]*self.FACTOR[i]+self.trims[i],
                             sim.simx_opmode_oneshot)
-            sim.simxPauseCommunication(self.clientID, False)
+            sim.simxPauseCommunication(self.client_id, False)
 
             time.sleep(self.slow_time)
-            returnCode, Dummy_Hposition= sim.simxGetObjectPosition(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
+            returnCode, Dummy_Hposition= sim.simxGetObjectPosition(self.client_id, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
 
 
-            returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
+            returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
             self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
 
             if self.body_euler_angle['roll'] > 0:
@@ -296,84 +272,61 @@ class MotionSim(object):
             for an in range(21):
                 delta_angles.append(round((angles[an] - self.tempangles[an])/0.2, 2))
 
-            position_o = int(self.gaitHeight * math.tan(self.modified_roll))
-            position_l = self.ytl
-            position_r = self.ytr
-            self.position_o.append(position_o)
-            if self.ztl == -self.gaitHeight:
-                self.position_l.append(position_l)
-            else: self.position_l.append(-1000)
-            if self.ztr == -self.gaitHeight:
-                self.position_r.append(position_r)
-            else: self.position_r.append(1000)
             self.tempangles = angles
             return True
 
     def activation(self):
         time.sleep(0.1)
-        sim.simxStartSimulation(self.clientID,sim.simx_opmode_oneshot)
-        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
+        sim.simxStartSimulation(self.client_id,sim.simx_opmode_oneshot)
+        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
         self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
-        returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
+        returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
         self.euler_angle = self.quaternion_to_euler_angle(Dummy_Hquaternion)
         self.direction_To_Attack += self.euler_angle['yaw']
-        #print('body_euler_angle = ', self.body_euler_angle)
-        returnCode, Dummy_Hposition= sim.simxGetObjectPosition(self.clientID, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
 
-        #self.Dummy_1_YawData.append(self.body_euler_angle[0])
         self.direction_To_Attack = self.norm_yaw(self.direction_To_Attack)
 
     def walk_initial_pose(self):
         self.robot_In_0_Pose = False
-
         self.xtr = self.xtl = 0
         amplitude = 70
-        framestep = self.sim_thread_cycle_in_ms//10
-        for j in range (self.initPoses):
-            self.ztr = -223.1 + j*(223.1-self.gaitHeight)/self.initPoses
-            self.ztl = -223.1 + j*(223.1-self.gaitHeight)/self.initPoses
-            self.ytr = -self.d10 - j*amplitude/2 /self.initPoses
-            self.ytl =  self.d10 - j*amplitude/2 /self.initPoses
+        for j in range (self.init_poses):
+            self.ztr = -223.1 + j*(223.1-self.gait_height)/self.init_poses
+            self.ztl = -223.1 + j*(223.1-self.gait_height)/self.init_poses
+            self.ytr = -self.d10 - j*amplitude/2 /self.init_poses
+            self.ytl =  self.d10 - j*amplitude/2 /self.init_poses
             angles = self.compute_alpha_for_walk(self.SIZES, self.LIM_ALPHA )
-            #if not self.falling_Flag ==0: return
             if len(angles)==0:
-                self.exitFlag = self.exitFlag +1
+                self.exit_flag = self.exit_flag +1
             else:
                 self.wait_sim_step()
-                sim.simxPauseCommunication(self.clientID, True)
+                sim.simxPauseCommunication(self.client_id, True)
                 for i in range(len(angles)):
-                    returnCode = sim.simxSetJointTargetPosition(self.clientID,
+                    _ = sim.simxSetJointTargetPosition(self.client_id,
                                 self.joint_handle[i] , angles[i]*self.FACTOR[i]+self.trims[i],
                                 sim.simx_opmode_oneshot)
-                sim.simxPauseCommunication(self.clientID, False)
+                sim.simxPauseCommunication(self.client_id, False)
 
                 time.sleep(self.slow_time)
-                returnCode, Dummy_Hposition= sim.simxGetObjectPosition(self.clientID,
-                                      self.dummy_h_handle , -1, sim.simx_opmode_buffer)
-                #self.Dummy_HData.append(Dummy_Hposition)
-
-                # print(Dummy_Hposition)
 
     def walk_cycle(self, stepLength, sideLength, rotation,cycle, number_Of_Cycles, secondStepLength = 1000):
         self.robot_In_0_Pose = False
 
-        self.stepLength = stepLength
-        self.sideLength = sideLength
+        self.step_length = stepLength
+        self.side_length = sideLength
         self.rotation = math.degrees(rotation)
-        #tmp1 = self.first_Leg_Is_Right_Leg
-        #if rotation>0 or sideLength<0:  self.first_Leg_Is_Right_Leg = False
-        #else: self.first_Leg_Is_Right_Leg = True
+
         rotation = -self.rotation/286
         alpha01 =  math.pi/self.fr2
         frameNumberPerCycle = 2*self.fr2
         frameNumberPerStep = self.fr2
         framestep = self.sim_thread_cycle_in_ms//10
         hovernum = 6     # number of steps hovering over take off + landing points
-        xt0 = self.stepLength /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-        xtr0 = - self.stepLength /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-        dx0_typical = self.stepLength/(self.fr2+ hovernum * framestep)*framestep        # CoM propulsion forward per framestep
-        dy0 = self.sideLength / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
-        dy = self.sideLength /(self.fr2 - hovernum * framestep) * framestep
+        xt0 = self.step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
+        xtr0 = - self.step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
+        dx0_typical = self.step_length/(self.fr2+ hovernum * framestep)*framestep        # CoM propulsion forward per framestep
+        dy0 = self.side_length / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
+        dy = self.side_length /(self.fr2 - hovernum * framestep) * framestep
         xr_old, xl_old, yr_old, yl_old = self.xr, self.xl, self.yr, self.yl
         # correction of sole skew depending on side angle of body when step pushes land
         self.yr, self.yl = - self.params['SOLE_LANDING_SKEW'], self.params['SOLE_LANDING_SKEW']
@@ -385,8 +338,8 @@ class MotionSim(object):
         wl_target = - rotation
                                                           # FASA 1 (Left support leg)
         if self.step_length_planer_is_on: print('pitch:', self.body_euler_angle['pitch'])
-        xt0, dy0, dy = self.step_length_planer(self.stepLength, self.sideLength, framestep, hovernum)
-        self.ztl = -self.gaitHeight
+        xt0, dy0, dy = self.step_length_planer(self.step_length, self.side_length, framestep, hovernum)
+        self.ztl = -self.gait_height
         xtl0  = self.xtl
         xtr0  = self.xtr
         xtl1 = -xt0
@@ -396,9 +349,8 @@ class MotionSim(object):
         for iii in range(0, frameNumberPerStep, framestep):
             start1 = 0
             if 2 * framestep < iii <  self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.step_length_planer(self.stepLength, self.sideLength, framestep, hovernum)
-                #if cycle == 3 and iii >= 2 * framestep:
-                #    xt0, dy0, dy = self.step_length_planer(self.stepLength, 60, framestep, hovernum)
+                xt0, dy0, dy = self.step_length_planer(self.step_length, self.side_length, framestep, hovernum)
+
                 xtl1 = -xt0
                 xtr1 = xt0
                 if cycle == 0:
@@ -414,31 +366,31 @@ class MotionSim(object):
             S = self.amplitude/2 *math.sin(alpha01 * iii )
             self.ytr = -S - self.d10
             self.ytl = -S + self.d10
-            self.ztr = -self.gaitHeight
+            self.ztr = -self.gait_height
             if iii == self.fr2 - 4 * framestep and self.step_length_planer_is_on:
                 #print('self.modified_roll =', self.modified_roll)
                 if self.modified_roll > 0.1 or self.body_euler_angle['pitch'] > 0.1:
                     for p in range(10):
 
                         self.sim_Progress(0.01)
-                        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
+                        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
                         self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
                         if self.body_euler_angle['roll'] > 0:
                             self.modified_roll = self.body_euler_angle['roll'] - math.pi
                         else: self.modified_roll = self.body_euler_angle['roll'] + math.pi
                         if self.modified_roll < 0.1 or self.body_euler_angle['pitch'] < 0.1: break
             if iii== 0 :
-                self.ztr = -self.gaitHeight + self.stepHeight / 3
+                self.ztr = -self.gait_height + self.step_height / 3
             elif iii== framestep:
-                self.ztr = -self.gaitHeight + self.stepHeight * 2 / 3
+                self.ztr = -self.gait_height + self.step_height * 2 / 3
             elif iii==self.fr2 - framestep:
-                self.ztr = -self.gaitHeight + self.stepHeight / 4
+                self.ztr = -self.gait_height + self.step_height / 4
             elif iii==self.fr2 - 2 * framestep:
-                self.ztr = -self.gaitHeight + self.stepHeight * 2 / 4
+                self.ztr = -self.gait_height + self.step_height * 2 / 4
             elif iii==self.fr2 - 3 * framestep:
-                self.ztr = -self.gaitHeight + self.stepHeight * 3 / 4
+                self.ztr = -self.gait_height + self.step_height * 3 / 4
             else:
-                self.ztr = -self.gaitHeight + self.stepHeight
+                self.ztr = -self.gait_height + self.step_height
             if iii==0 or iii== framestep or iii== 2 * framestep:
                 #self.xtr = xtr0 + dx0 * (iii / framestep + 1)
                 self.xtr += dx0
@@ -457,7 +409,7 @@ class MotionSim(object):
             self.xtl += dx0
             self.ytl = -S + self.d10 + dy0 * iii
             #if iii > self.fr2 / 3 * 2:
-            #    self.xl = 3 * self.xtl/ self.gaitHeight
+            #    self.xl = 3 * self.xtl/ self.gait_height
             #else:
             #    self.xl = 0
             successCode = self.feet_action()
@@ -467,12 +419,12 @@ class MotionSim(object):
 
         self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']   #
         if self.step_length_planer_is_on: print('pitch:', self.body_euler_angle['pitch'])
-        xt0, dy0, dy = self.step_length_planer(secondStepLength, self.sideLength, framestep, hovernum)
+        xt0, dy0, dy = self.step_length_planer(secondStepLength, self.side_length, framestep, hovernum)
         xtl1  = self.xtl
         xtr1  = self.xtr
         #xtl1 = -xt0
         #xtr1 = xt0
-        self.ztr = -self.gaitHeight
+        self.ztr = -self.gait_height
         if cycle == number_Of_Cycles - 1:
             xtl2 = 0
             xtr2 = 0
@@ -484,7 +436,7 @@ class MotionSim(object):
         for iii in range(0, frameNumberPerStep, framestep):
             start1 = 0
             if 2 * framestep < iii <  self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.step_length_planer(secondStepLength, self.sideLength, framestep, hovernum)
+                xt0, dy0, dy = self.step_length_planer(secondStepLength, self.side_length, framestep, hovernum)
                 xtl1 = -xt0
                 xtr1 = xt0
                 if cycle == number_Of_Cycles - 1:
@@ -500,34 +452,34 @@ class MotionSim(object):
             S = -self.amplitude/2 *math.sin(alpha01 * iii)
             self.ytr = -S - self.d10
             self.ytl = -S + self.d10
-            self.ztl = -self.gaitHeight
+            self.ztl = -self.gait_height
             if iii == self.fr2 - 4 * framestep and self.step_length_planer_is_on:
                 #print('self.modified_roll =', self.modified_roll)
                 if self.modified_roll < 0 or self.body_euler_angle['pitch'] > 0.1:
                     for p in range(10):
 
                         self.sim_Progress(0.01)
-                        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
+                        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
                         self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
                         if self.body_euler_angle['roll'] > 0:
                             self.modified_roll = self.body_euler_angle['roll'] - math.pi
                         else: self.modified_roll = self.body_euler_angle['roll'] + math.pi
                         if self.modified_roll > 0.0 or self.body_euler_angle['pitch'] < 0.1: break
             if iii == 0:
-                self.ztl = -self.gaitHeight + self.stepHeight / 3
+                self.ztl = -self.gait_height + self.step_height / 3
             elif iii == framestep:
-                self.ztl = -self.gaitHeight + self.stepHeight * 2 / 3
+                self.ztl = -self.gait_height + self.step_height * 2 / 3
             elif iii == self.fr2 - framestep:
-                self.ztl = -self.gaitHeight + self.stepHeight / 4
+                self.ztl = -self.gait_height + self.step_height / 4
             elif iii == self.fr2 - 2 * framestep:
-                self.ztl = -self.gaitHeight + self.stepHeight * 2 / 4
+                self.ztl = -self.gait_height + self.step_height * 2 / 4
             elif iii == self.fr2 - 3 * framestep:
-                self.ztl = -self.gaitHeight + self.stepHeight * 3 / 4
+                self.ztl = -self.gait_height + self.step_height * 3 / 4
             else:
-                self.ztl = -self.gaitHeight + self.stepHeight
+                self.ztl = -self.gait_height + self.step_height
             if cycle == number_Of_Cycles - 1:
                 if iii== (self.fr2 - framestep):
-                    self.ztl = -self.gaitHeight
+                    self.ztl = -self.gait_height
                     self.ytl = S + self.d10
             if iii == 0 or iii == framestep or iii == 2 * framestep :
                 self.xtl += dx0
@@ -544,17 +496,16 @@ class MotionSim(object):
             self.ytr += dy0
             if self.ytl < 54 : self.ytl = 54
             #if iii > self.fr2 / 3 * 2:
-            #    self.xr = 3 * self.xtr/ self.gaitHeight
+            #    self.xr = 3 * self.xtr/ self.gait_height
             #else:
             #    self.xr = 0
             successCode = self.feet_action()
             #print(iii + self.fr2, self.xtr, self.ytr, self.ztr, self.xr, self.yr, self.zr, self.wr, self.xtl, self.ytl, self.ztl, self.xl, self.yl, self.zl, self.wl, successCode)
         # returning xr, xl, yr, yl to initial value
         self.xr, self.xl, self.yr, self.yl = xr_old, xl_old, yr_old, yl_old
-        #self.first_Leg_Is_Right_Leg = tmp1
 
     def refresh_orientation(self):
-        returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
+        returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
         self.euler_angle = self.quaternion_to_euler_angle(Dummy_Hquaternion)
         self.euler_angle['yaw'] -= self.direction_To_Attack
 
@@ -568,82 +519,52 @@ class MotionSim(object):
 
     def wait_sim_step(self):
         while True:
-            sim.simxGetIntegerParameter(self.clientID, sim.sim_intparam_program_version, sim.simx_opmode_buffer)
-            tim = sim.simxGetLastCmdTime(self.clientID)
+            sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_buffer)
+            tim = sim.simxGetLastCmdTime(self.client_id)
 
             if tim > self.sim_step_counter:
                 self.sim_step_counter = tim
                 break
             time.sleep(0.001)
 
-    def simulateMotion(self, number = 0, name = ''):
-        if number > 0 and name == '': name = self.MOTION_SLOT_DICT[number]
-        with open(current_work_directory + "Soccer/Motion/motion_slots/" + name + ".json", "r") as f:
-            slots = json.loads(f.read())
-        mot_list = slots[name]
-        i=0
-        for i in range(len(mot_list)):
-            if  self.falling_Flag ==3: return
-            activePoseOld = []
-            for ind in range(len(self.activePose)): activePoseOld.append(self.activePose[ind])
-            self.activePose =[]
-            for j in range(len(self.ACTIVEJOINTS) - 2):
-                    self.activePose.append(0.017*mot_list[i][j+1]*0.03375)
-            pulseNum = int(mot_list[i][0]*self.FRAMELENGTH * 1000 / self.simThreadCycleInMs)
-            for k in range (pulseNum):
-                sim.simxPauseCommunication(self.clientID, True)
-                for j in range(len(self.ACTIVEJOINTS) - 2):
-                    tempActivePose = activePoseOld[j]+(self.activePose[j]-activePoseOld[j])*k/pulseNum
-                    returnCode = sim.simxSetJointTargetPosition(self.clientID, self.joint_handle[j] ,
-                                 tempActivePose*self.FACTOR[j] +self.trims[j], sim.simx_opmode_streaming)
-                sim.simxPauseCommunication(self.clientID, False)
-                sim.simxSynchronousTrigger(self.clientID)
-        return
-
     def activation(self):
         time.sleep(0.1)
-        sim.simxStartSimulation(self.clientID,sim.simx_opmode_oneshot)
-        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
+        sim.simxStartSimulation(self.client_id,sim.simx_opmode_oneshot)
+        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_1_handle , -1, sim.simx_opmode_buffer)
         self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
-        returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
+        returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.client_id, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
         self.euler_angle = self.quaternion_to_euler_angle(Dummy_Hquaternion)
         self.direction_To_Attack += self.euler_angle['yaw']
-        #print('body_euler_angle = ', self.body_euler_angle)
-        returnCode, Dummy_Hposition= sim.simxGetObjectPosition(self.clientID, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
-        #self.Dummy_1_YawData.append(self.body_euler_angle[0])
+
         self.direction_To_Attack = self.norm_yaw(self.direction_To_Attack)
 
     def sim_start(self):
         sim.simxFinish(-1) # just in case, close all opened connections
         simThreadCycleInMs = 5
-        self.clientID=sim.simxStart('127.0.0.1', -19997, True, True, 5000, simThreadCycleInMs) # Connect to V-REP
+        self.client_id=sim.simxStart('127.0.0.1', -19997, True, True, 5000, simThreadCycleInMs) # Connect to V-REP
             ## Collect Joint Handles and trims from model
-        returnCode, self.dummy_h_handle = sim.simxGetObjectHandle(self.clientID, 'Dummy_H', sim.simx_opmode_blocking)
-        returnCode, self.dummy_1_handle = sim.simxGetObjectHandle(self.clientID, 'Dummy1' , sim.simx_opmode_blocking)
-        returnCode, Dummy_Hposition= sim.simxGetObjectPosition(self.clientID, self.dummy_h_handle , -1, sim.simx_opmode_streaming)
-        returnCode, Dummy_Hquaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_h_handle , -1, sim.simx_opmode_streaming)
-        returnCode, Dummy_1position= sim.simxGetObjectPosition(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_streaming)
-        returnCode, Dummy_1quaternion= sim.simxGetObjectQuaternion(self.clientID, self.dummy_1_handle , -1, sim.simx_opmode_streaming)
+        returnCode, self.dummy_h_handle = sim.simxGetObjectHandle(self.client_id, 'Dummy_H', sim.simx_opmode_blocking)
+        returnCode, self.dummy_1_handle = sim.simxGetObjectHandle(self.client_id, 'Dummy1' , sim.simx_opmode_blocking)
         for i in range(len(self.ACTIVEJOINTS)):
-            returnCode, handle= sim.simxGetObjectHandle(self.clientID, self.ACTIVEJOINTS[i], sim.simx_opmode_blocking)
+            returnCode, handle= sim.simxGetObjectHandle(self.client_id, self.ACTIVEJOINTS[i], sim.simx_opmode_blocking)
             self.joint_handle.append(handle)
-            returnCode, position= sim.simxGetJointPosition(self.clientID, handle, sim.simx_opmode_blocking)
+            returnCode, position= sim.simxGetJointPosition(self.client_id, handle, sim.simx_opmode_blocking)
             self.trims.append(position)
             self.activePose.append(position)
-        sim.simxGetIntegerParameter(self.clientID, sim.sim_intparam_program_version, sim.simx_opmode_streaming)
+        sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_streaming)
 
 
     def sim_Stop(self):
-        sim.simxStopSimulation(self.clientID,sim.simx_opmode_oneshot)
+        sim.simxStopSimulation(self.client_id,sim.simx_opmode_oneshot)
                 # return to initial pose
         for j in range(len(self.ACTIVEJOINTS)):
-            returnCode = sim.simxSetJointTargetPosition(self.clientID,
+            returnCode = sim.simxSetJointTargetPosition(self.client_id,
                          self.joint_handle[j] , self.trims[j], sim.simx_opmode_oneshot)
 
 
     def sim_Disable(self):            # Now close the connection to Sim:
         time.sleep(0.2)
-        sim.simxFinish(self.clientID)
+        sim.simxFinish(self.client_id)
 
 
 if __name__=="__main__":
