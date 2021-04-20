@@ -17,17 +17,16 @@ sys.path.append(current_work_directory + 'Soccer/Motion/')
 from class_Motion import Glob
 from class_Motion import *
 from class_Motion_sim import*
-from class_Motion_sim import Motion_sim as Motion
+from class_Motion_sim import MotionSim
 
 
-
-class Player():
+class Player(object):
     def __init__(self):
         self.glob = Glob(current_work_directory)
         self.motion = None
 
     def simulation(self):
-        self.motion = Motion(self.glob)
+        self.motion = MotionSim(self.glob)
         self.motion.sim_start()
         self.common_init()
 
@@ -79,9 +78,6 @@ class Player():
                 number_Of_Cycles,
                 secondStepLength=secondStepLength
             )
-
-
-
 
 
 if __name__=="__main__":

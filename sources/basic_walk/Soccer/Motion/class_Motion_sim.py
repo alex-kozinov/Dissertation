@@ -23,10 +23,11 @@ sys.path.append( current_work_directory + 'Soccer/Motion/')
 
 
 from class_Motion import *
-from class_Motion import Motion1
+from class_Motion import MotionBase
 from compute_Alpha_v3 import Alpha
 
-class Motion_sim(Motion1):
+
+class MotionSim(MotionBase):
     def __init__(self, glob):
         self.yaw_timer = time.perf_counter()
         self.FRAMELENGTH = 0.02
@@ -62,7 +63,7 @@ class Motion_sim(Motion1):
         self.clientID = -1
         self.sim_step_counter = 0
         super().__init__(glob)
-        
+
     def on_pause(self, e):
         self.pause_key_is_pressed = True
 
@@ -75,7 +76,7 @@ class Motion_sim(Motion1):
             tim = self.sim.simxGetLastCmdTime(self.clientID)
             #print ('Simulation time: ', tim)
             if tim > self.sim_step_counter:
-                self.sim_step_counter = tim 
+                self.sim_step_counter = tim
                 break
             time.sleep(0.001)
             if self.stop_key_is_pressed:

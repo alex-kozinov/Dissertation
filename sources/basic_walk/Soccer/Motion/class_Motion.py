@@ -11,7 +11,8 @@ class Glob:
         with open(current_work_directory + "Soccer/Init_params/Sim/Sim_params.json", "r") as f:
             self.params = json.loads(f.read())
 
-class Motion1:
+
+class MotionBase:
     def __init__(self, glob):
         self.glob = glob
         self.params = self.glob.params
@@ -23,10 +24,8 @@ class Motion1:
         # (10,1) Лев Стопа Вбок,  (9,1) Лев Стопа Вперед, (8,1) Лев Голень,  (7,1) Лев Колено
         # (6,1)  Лев Бедро,       (5,1) Лев Таз,          (1,1) Лев Ключица, (4,1) Лев Локоть
 
-        self.servo_Trims = [0 for i in range(len(self.ACTIVESERVOS))]
+        self.FACTOR =  [ 1,1,1,-1,1,1, 1,1,1,1,1,1,1, 1,-1,1,1, 1,1,1,1, 1, 1]
 
-        #FACTOR =  [ 1,-1,-1,1,-1,-1, 1,1,1,-1,1,-1,-1, 1,1,-1,-1, 1,1,1,-1,-1, 1]  # v2.3
-        self.FACTOR =  [ 1,1,1,-1,1,1, 1,1,1,1,1,1,1, 1,-1,1,1, 1,1,1,1, 1, 1]  # Surrogat 1
         a5 = 21.5  # мм расстояние от оси симметрии до оси сервы 5
         b5 = 18.5  # мм расстояние от оси сервы 5 до оси сервы 6 по горизонтали
         c5 = 0     # мм расстояние от оси сервы 6 до нуля Z по вертикали
@@ -39,22 +38,17 @@ class Motion1:
         c10 = 12   # мм расстояние от оси сервы 6 до оси сервы 10 по горизонтали
         self.SIZES = [ a5, b5, c5, a6, a7, a8, a9, a10, b10, c10 ]
         self.d10 = 53.4 #53.4 # расстояние по Y от центра стопы до оси робота
+
         limAlpha5 = [-2667, 2667]
         limAlpha6 = [-3000,  740]
         limAlpha7 = [-3555, 3260]
         limAlpha8 = [-4150, 1777]
         limAlpha9 = [-4000, 2960]
         limAlpha10 =[-2815,   600]
-        LIMALPHA = [limAlpha5, limAlpha6, limAlpha7, limAlpha8, limAlpha9, limAlpha10]
-        self.MOTION_SLOT_DICT = {0:['',0], 1:['',0], 2:['',0], 3:['',0], 4:['',0], 5:['Get_Up_Inentification',7000],
-                    6:['Soccer_Get_UP_Stomach_N', 5000], 7:['Soccer_Get_UP_Face_Up_N', 5000], 8:['Soccer_Walk_FF',0], 9:['',0], 10:['',0],
-                    11:['',0], 12:['',0], 13:['',0], 14:['Soccer_Small_Jump_Forward',0], 15:['',0],
-                    16:['',0], 17:['',0], 18:['Soccer_Kick_Forward_Right_Leg',5000], 19: ['Soccer_Kick_Forward_Left_Leg',5000], 20:['',0],
-                    21:['Get_Up_From_Defence',1000], 22:['',0], 23:['PanaltyDefenceReady_Fast',500], 24:['PenaltyDefenceF',300], 25:['',0],
-                    26:['',0], 27:['',0], 28:['',0], 29:['',0], 30:['Soccer_Walk_FF0',0],
-                    31:['Soccer_Walk_FF1',0], 32:['Soccer_Walk_FF2',0], 33: ['Soccer_Get_UP_Stomach',0], 34:['Soccer_Get_UP_Face_Up',0],
-                    35: ['Get_Up_Right',0], 36: ['PenaltyDefenceR',2000], 37: ['PenaltyDefenceL',2000]}
-        self.stepLengthPlaner_is_ON = False
+        self.LIM_ALPHA = [limAlpha5, limAlpha6, limAlpha7, limAlpha8, limAlpha9, limAlpha10]
+        self.LIM_ALPHA[3][1] = 0
+
+        self.step_length_planer_is_on = False
         self.TIK2RAD = 0.00058909
         self.slowTime   = 0.0             # seconds
         self.simThreadCycleInMs = 20
@@ -71,8 +65,7 @@ class Motion1:
         self.gaitHeight= 190         # Distance between Center of mass and floor in walk pose
         self.stepHeight = 32.0       # elevation of sole over floor
         self.initPoses = 400//self.simThreadCycleInMs
-        self.limAlpha1 =LIMALPHA
-        self.limAlpha1[3][1]=0
+
         #  end of  paramenetrs Not recommended for change
         self.al = Alpha()
         self.exitFlag = 0
@@ -153,18 +146,6 @@ class Motion1:
 
     def play_Soft_Motion_Slot(self, name = ''):             # the slot from file will be played in robot
         self.simulateMotion(name = name)
-
-    def falling_Test(self):
-        if self.pause_key_is_pressed:
-            #self.lock.acquire()
-            self.sim.simxPauseSimulation(self.clientID, self.sim.simx_opmode_oneshot)
-            self.pause_key_is_pressed = False
-            while (True):
-                if self.pause_key_is_pressed:
-                    #self.lock.release()
-                    self.sim.simxStartSimulation(self.clientID, self.sim.simx_opmode_oneshot)
-                    self.pause_key_is_pressed = False
-                    break
 
         if self.stop_key_is_pressed:
             print('Simulation STOP by keyboard')
@@ -271,10 +252,7 @@ class Motion1:
 
     def walk_Initial_Pose(self):
         self.robot_In_0_Pose = False
-        if not self.falling_Test() == 0:
-            if self.falling_Flag == 3: print('STOP!')
-            else: print('FALLING!!!', self.falling_Flag)
-            return[]
+
         self.xtr = self.xtl = 0
         amplitude = 70
         framestep = self.simThreadCycleInMs//10
@@ -283,7 +261,7 @@ class Motion1:
             self.ztl = -223.1 + j*(223.1-self.gaitHeight)/self.initPoses
             self.ytr = -self.d10 - j*amplitude/2 /self.initPoses
             self.ytl =  self.d10 - j*amplitude/2 /self.initPoses
-            angles = self.computeAlphaForWalk(self.SIZES, self.limAlpha1 )
+            angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA )
             #if not self.falling_Flag ==0: return
             if len(angles)==0:
                 self.exitFlag = self.exitFlag +1
@@ -305,10 +283,7 @@ class Motion1:
 
     def walk_cycle(self, stepLength, sideLength, rotation,cycle, number_Of_Cycles, secondStepLength = 1000):
         self.robot_In_0_Pose = False
-        if not self.falling_Test() == 0:
-            if self.falling_Flag == 3: print('STOP!')
-            else: print('FALLING!!!', self.falling_Flag)
-            return[]
+
         self.stepLength = stepLength
         self.sideLength = sideLength
         self.rotation = math.degrees(rotation)
@@ -336,7 +311,7 @@ class Motion1:
         wr_target = - rotation
         wl_target = - rotation
                                                           # FASA 1 (Left support leg)
-        if self.stepLengthPlaner_is_ON: print('pitch:', self.body_euler_angle['pitch'])
+        if self.step_length_planer_is_on: print('pitch:', self.body_euler_angle['pitch'])
         xt0, dy0, dy = self.stepLengthPlaner(self.stepLength, self.sideLength, framestep, hovernum)
         self.ztl = -self.gaitHeight
         xtl0  = self.xtl
@@ -367,7 +342,7 @@ class Motion1:
             self.ytr = -S - self.d10
             self.ytl = -S + self.d10
             self.ztr = -self.gaitHeight
-            if iii == self.fr2 - 4 * framestep and self.stepLengthPlaner_is_ON:
+            if iii == self.fr2 - 4 * framestep and self.step_length_planer_is_on:
                 #print('self.modified_roll =', self.modified_roll)
                 if self.modified_roll > 0.1 or self.body_euler_angle['pitch'] > 0.1:
                     for p in range(10):
@@ -418,7 +393,7 @@ class Motion1:
                                         # FASA 2 ( Right support leg)
 
         self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']   #
-        if self.stepLengthPlaner_is_ON: print('pitch:', self.body_euler_angle['pitch'])
+        if self.step_length_planer_is_on: print('pitch:', self.body_euler_angle['pitch'])
         xt0, dy0, dy = self.stepLengthPlaner(secondStepLength, self.sideLength, framestep, hovernum)
         xtl1  = self.xtl
         xtr1  = self.xtr
@@ -453,7 +428,7 @@ class Motion1:
             self.ytr = -S - self.d10
             self.ytl = -S + self.d10
             self.ztl = -self.gaitHeight
-            if iii == self.fr2 - 4 * framestep and self.stepLengthPlaner_is_ON:
+            if iii == self.fr2 - 4 * framestep and self.step_length_planer_is_on:
                 #print('self.modified_roll =', self.modified_roll)
                 if self.modified_roll < 0 or self.body_euler_angle['pitch'] > 0.1:
                     for p in range(10):
@@ -506,7 +481,7 @@ class Motion1:
         #self.first_Leg_Is_Right_Leg = tmp1
 
     def stepLengthPlaner(self, regularStepLength, regularSideLength, framestep, hovernum):
-        if self.stepLengthPlaner_is_ON == True:
+        if self.step_length_planer_is_on == True:
             stepLength1 = regularStepLength
             if - 0.08 <= self.body_euler_angle['pitch'] < - 0.045:
                 #stepLength1 += (-self.body_euler_angle['pitch']) * 2000
@@ -528,10 +503,10 @@ class Motion1:
             if self.body_euler_angle['roll'] > 0:
                 self.modified_roll = self.body_euler_angle['roll'] - math.pi
             else: self.modified_roll = self.body_euler_angle['roll'] + math.pi
-            if self.modified_roll > 0.2 : 
+            if self.modified_roll > 0.2 :
                 sideLength = 60
                 print('sideLength = ', sideLength)
-            if self.modified_roll < -0.2 : 
+            if self.modified_roll < -0.2 :
                 sideLength = -60
                 print('sideLength = ', sideLength)
             else: sideLength = regularSideLength
@@ -544,7 +519,7 @@ class Motion1:
         return xt0, dy0, dy
 
     def feet_Action(self, start1):
-        angles = self.computeAlphaForWalk(self.SIZES, self.limAlpha1 )
+        angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA )
         if not self.falling_Flag ==0: return
         if len(angles)==0:
             self.exitFlag = self.exitFlag +1
@@ -593,10 +568,7 @@ class Motion1:
 
     def walk_Final_Pose(self):
         self.robot_In_0_Pose = False
-        if not self.falling_Test() == 0:
-            if self.falling_Flag == 3: print('STOP!')
-            else: print('FALLING!!!', self.falling_Flag)
-            return[]
+
         initPoses = self.initPoses * 4
         framestep = self.simThreadCycleInMs//10
         for j in range (initPoses):
@@ -605,8 +577,8 @@ class Motion1:
             self.ytr = -self.d10 - (initPoses-(j+1))*self.amplitude/2 /initPoses
             self.ytl =  self.d10 - (initPoses-(j+1))*self.amplitude/2 /initPoses
             if j == initPoses - 1:
-                angles = self.computeAlphaForWalk(self.SIZES, self.limAlpha1, hands_on = False)
-            else: angles = self.computeAlphaForWalk(self.SIZES, self.limAlpha1 )
+                angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA, hands_on = False)
+            else: angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA )
             #if not self.falling_Flag ==0: return
             if len(angles)==0:
                 self.exitFlag = self.exitFlag +1
