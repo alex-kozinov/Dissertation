@@ -103,7 +103,6 @@ class MotionSim(object):
         self.wl = 0
         self.euler_angle = {}
         self.modified_roll = 0
-        self.robot_In_0_Pose = False
         self.tempangle = 0
         self.tempangles = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         self.ACTIVEJOINTS = ['Leg_right_10', 'Leg_right_9', 'Leg_right_8', 'Leg_right_7', 'Leg_right_6', 'Leg_right_5',
@@ -282,7 +281,6 @@ class MotionSim(object):
         self.direction_to_attack = self.norm_yaw(self.direction_to_attack)
 
     def walk_initial_pose(self):
-        self.robot_In_0_Pose = False
         self.xtr = self.xtl = 0
         amplitude = 70
         for j in range (self.init_poses):
@@ -305,8 +303,6 @@ class MotionSim(object):
                 time.sleep(self.slow_time)
 
     def walk_cycle(self, stepLength, sideLength, rotation,cycle, number_Of_Cycles, secondStepLength = 1000):
-        self.robot_In_0_Pose = False
-
         self.step_length = stepLength
         self.side_length = sideLength
         self.rotation = math.degrees(rotation)
