@@ -24,17 +24,14 @@ class Player(object):
     def simulation(self):
         self.motion = MotionSim(self.glob)
         self.motion.sim_start()
-        self.common_init()
-
+        
         self.balancing_test_main_cycle()
 
         self.motion.sim_stop()
         self.motion.sim_disable()
 
-    def common_init(self):
-        self.motion.activation()
-
     def balancing_test_main_cycle(self):
+        self.motion.refresh_orientation()
         self.motion.amplitude = 20
         self.motion.fr1 = 0
         self.motion.fr2 = 24

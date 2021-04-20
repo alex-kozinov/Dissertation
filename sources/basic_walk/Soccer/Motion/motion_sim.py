@@ -51,8 +51,22 @@ class SimBackend(object):
         time.sleep(0.1)
         sim.simxStartSimulation(self.client_id, sim.simx_opmode_oneshot)
 
+    def wait_step(self):
+        while True:
+            sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_buffer)
+            tim = sim.simxGetLastCmdTime(self.client_id)
+
+            if tim > self.sim_step_counter:
+                self.sim_step_counter = tim
+                break
+            time.sleep(0.001)
+
     def stop(self):
         sim.simxStopSimulation(self.client_id, sim.simx_opmode_oneshot)
+
+    def disable(self):
+        time.sleep(0.2)
+        sim.simxFinish(self.client_id)
 
     def set_joint_positions(self, positions):
         sim.simxPauseCommunication(self.client_id, True)
@@ -65,10 +79,6 @@ class SimBackend(object):
             )
         sim.simxPauseCommunication(self.client_id, False)
 
-    def disable(self):
-        time.sleep(0.2)
-        sim.simxFinish(self.client_id)
-
     def get_joint_positions(self):
         positions = []
         for i, joint_handle in enumerate(self.joint_handles):
@@ -76,16 +86,6 @@ class SimBackend(object):
             positions.append(position)
 
         return positions
-
-    def wait_step(self):
-        while True:
-            sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_buffer)
-            tim = sim.simxGetLastCmdTime(self.client_id)
-
-            if tim > self.sim_step_counter:
-                self.sim_step_counter = tim
-                break
-            time.sleep(0.001)
 
     def get_imu_quaternion(self):
         _, dummy_h_quaternion = sim.simxGetObjectQuaternion(self.client_id, self.imu_handle, -1, sim.simx_opmode_buffer)
@@ -120,7 +120,6 @@ class BaseAgent(object):
 class MotionSim(object):
     def __init__(self, glob):
         self.FRAMELENGTH = 0.02
-        self.use_sim_backend = True
         self.trims = []
         self.joint_handle = []
         self.dummy_h_handle = 0
@@ -171,7 +170,6 @@ class MotionSim(object):
         self.alpha = Alpha()
         self.exit_flag = 0
         self.neck_pan = 0
-        self.direction_to_attack = 0
         self.xtr = 0
         self.ytr = -self.d10  # -53.4
         self.ztr = -self.gait_height
@@ -301,20 +299,8 @@ class MotionSim(object):
             new_positions = []
             for i in range(len(angles)):
                 new_positions.append(angles[i] * self.FACTOR[i] + self.trims[i])
-            if self.use_sim_backend:
-                self.sim_backend.set_joint_positions(new_positions)
-            else:
-                sim.simxPauseCommunication(self.client_id, True)
-                for i in range(len(angles)):
-                    _ = sim.simxSetJointTargetPosition(
-                        self.client_id,
-                        self.joint_handle[i],
-                        new_positions[i],
-                        sim.simx_opmode_oneshot
-                    )
-                sim.simxPauseCommunication(self.client_id, False)
-                time.sleep(self.slow_time)
-                return True
+            self.sim_backend.set_joint_positions(new_positions)
+            return True
 
     def walk_initial_pose(self):
         self.xtr = self.xtl = 0
@@ -473,12 +459,8 @@ class MotionSim(object):
         self.xr, self.xl, self.yr, self.yl = xr_old, xl_old, yr_old, yl_old
 
     def refresh_orientation(self):
-        if self.use_sim_backend:
-            dummy_h_quaternion = self.sim_backend.get_imu_quaternion()
-        else:
-            _, dummy_h_quaternion = sim.simxGetObjectQuaternion(self.client_id, self.dummy_h_handle , -1, sim.simx_opmode_buffer)
+        dummy_h_quaternion = self.sim_backend.get_imu_quaternion()
         self.euler_angle = self.quaternion_to_euler_angle(dummy_h_quaternion)
-        self.euler_angle['yaw'] -= self.direction_to_attack
 
     @staticmethod
     def normalize_rotation(yaw):
@@ -495,69 +477,18 @@ class MotionSim(object):
         return yaw
 
     def wait_sim_step(self):
-        if self.use_sim_backend:
-            self.sim_backend.wait_step()
-        else:
-            while True:
-                sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_buffer)
-                tim = sim.simxGetLastCmdTime(self.client_id)
-
-                if tim > self.sim_step_counter:
-                    self.sim_step_counter = tim
-                    break
-                time.sleep(0.001)
-
-    def activation(self):
-        self.refresh_orientation()
-        self.direction_to_attack = self.norm_yaw(self.direction_to_attack)
+        self.sim_backend.wait_step()
 
     def sim_start(self):
-        if self.use_sim_backend:
-            self.sim_backend.start()
-            self.trims = self.sim_backend.get_joint_positions()
-        else:
-            sim.simxFinish(-1)  # just in case, close all opened connections
-            sim_thread_cycle_in_ms = 5
-            self.client_id = sim.simxStart('127.0.0.1', -19997, True, True, 5000, sim_thread_cycle_in_ms)
-            for i in range(len(self.ACTIVEJOINTS)):
-                _, self.dummy_h_handle = sim.simxGetObjectHandle(self.client_id, 'Dummy_H', sim.simx_opmode_blocking)
-                _, handle = sim.simxGetObjectHandle(self.client_id, self.ACTIVEJOINTS[i], sim.simx_opmode_blocking)
-                # _, position = sim.simxGetJointPosition(self.client_id, handle, sim.simx_opmode_blocking)
-                self.joint_handle.append(handle)
-                # self.trims.append(position)
-            sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_streaming)
-            time.sleep(0.1)
-            sim.simxStartSimulation(self.client_id, sim.simx_opmode_oneshot)
-
-            for i in range(len(self.ACTIVEJOINTS)):
-                # _, self.dummy_h_handle = sim.simxGetObjectHandle(self.client_id, 'Dummy_H', sim.simx_opmode_blocking)
-                # _, handle = sim.simxGetObjectHandle(self.client_id, self.ACTIVEJOINTS[i], sim.simx_opmode_blocking)
-                _, position = sim.simxGetJointPosition(self.client_id, self.joint_handle[i], sim.simx_opmode_blocking)
-                # self.joint_handle.append(handle)
-                self.trims.append(position)
+        self.sim_backend.start()
+        self.trims = self.sim_backend.get_joint_positions()
 
     def sim_stop(self):
-        if self.use_sim_backend:
-            self.sim_backend.stop()
-            self.sim_backend.set_joint_positions(self.trims)
-        else:
-            sim.simxStopSimulation(self.client_id, sim.simx_opmode_oneshot)
-            sim.simxPauseCommunication(self.client_id, True)
-            for j in range(len(self.ACTIVEJOINTS)):
-                _ = sim.simxSetJointTargetPosition(
-                    self.client_id,
-                    self.joint_handle[j],
-                    self.trims[j],
-                    sim.simx_opmode_oneshot
-                )
-            sim.simxPauseCommunication(self.client_id, False)
+        self.sim_backend.stop()
+        self.sim_backend.set_joint_positions(self.trims)
 
     def sim_disable(self):
-        if self.use_sim_backend:
-            self.sim_backend.disable()
-        else:
-            time.sleep(0.2)
-            sim.simxFinish(self.client_id)
+        self.sim_backend.disable()
 
 
 if __name__ == "__main__":
