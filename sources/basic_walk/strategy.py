@@ -54,7 +54,7 @@ class Player(object):
         else:
             invert = 1
 
-        self.motion.walk_Initial_Pose()
+        self.motion.walk_initial_pose()
         number_Of_Cycles += 1
         for cycle in range(number_Of_Cycles):
             stepLength1 = stepLength
@@ -66,7 +66,7 @@ class Player(object):
                 stepLength1 = stepLength/3 * 2
                 secondStepLength = stepLength/3 * 2
 
-            self.motion.refresh_Orientation()
+            self.motion.refresh_orientation()
 
             rotation = 0 + invert * self.motion.imu_body_yaw() * 1.2
             rotation = self.motion.normalize_rotation(rotation)

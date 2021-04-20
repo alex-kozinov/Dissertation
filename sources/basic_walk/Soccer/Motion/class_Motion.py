@@ -5,6 +5,7 @@ import sys, os
 import math, time, json
 from compute_Alpha_v3 import Alpha
 
+
 class Glob:
     def __init__(self, current_work_directory):
         self.current_work_directory = current_work_directory
@@ -37,7 +38,7 @@ class MotionBase:
         b10= 26.4  # мм расстояние от оси сервы 10 до низа стопы   26.4
         c10 = 12   # мм расстояние от оси сервы 6 до оси сервы 10 по горизонтали
         self.SIZES = [ a5, b5, c5, a6, a7, a8, a9, a10, b10, c10 ]
-        self.d10 = 53.4 #53.4 # расстояние по Y от центра стопы до оси робота
+        self.d10 = 53.4  # 53.4 расстояние по Y от центра стопы до оси робота
 
         limAlpha5 = [-2667, 2667]
         limAlpha6 = [-3000,  740]
@@ -50,8 +51,8 @@ class MotionBase:
 
         self.step_length_planer_is_on = False
         self.TIK2RAD = 0.00058909
-        self.slowTime   = 0.0             # seconds
-        self.simThreadCycleInMs = 20
+        self.slow_time = 0.0  # seconds
+        self.sim_thread_cycle_in_ms = 20
         self.frame_delay = self.glob.params['FRAME_DELAY']
         self.frames_per_cycle = self.glob.params['FRAMES_PER_CYCLE']
         self.stepLength = 0.0    # -50 - +70. Best choise 64 for forward. Maximum safe value for backward step -50.
@@ -64,7 +65,7 @@ class MotionBase:
         self.fr2 = 12                # frame number for 2-nd phase of gait ( one leg in air)
         self.gaitHeight= 190         # Distance between Center of mass and floor in walk pose
         self.stepHeight = 32.0       # elevation of sole over floor
-        self.initPoses = 400//self.simThreadCycleInMs
+        self.initPoses = 400//self.sim_thread_cycle_in_ms
 
         #  end of  paramenetrs Not recommended for change
         self.al = Alpha()
@@ -99,7 +100,6 @@ class MotionBase:
             'hand_right_3','hand_right_2','hand_right_1','Tors1','Leg_left_10','Leg_left_9','Leg_left_8',
             'Leg_left_7','Leg_left_6','Leg_left_5','hand_left_4','hand_left_3','hand_left_2','hand_left_1','head0','head12']
 
-    #-------------------------------------------------------------------------------------------------------------------------------
     def imu_body_yaw(self):
         yaw = self.neck_pan*self.TIK2RAD + self.euler_angle['yaw']
         yaw = self.norm_yaw(yaw)
@@ -130,47 +130,7 @@ class MotionBase:
         euler_angle['roll'] = math.radians(Z)
         return euler_angle
 
-    def push_Button(self, button):
-        pressed_button = button.wait_for_button_pressing()
-        print("нажато")
-        return pressed_button
-        #ala = 0
-        #while(ala==0):
-        #    if (self.pin2.value()== 0):   # нажатие на кнопку 2 на голове
-        #        ala = 1
-        #        print("нажато")
-        #self.pyb.delay(1000)
-
-    def play_Motion_Slot(self, name = ''):
-        self.simulateMotion(name = name)
-
-    def play_Soft_Motion_Slot(self, name = ''):             # the slot from file will be played in robot
-        self.simulateMotion(name = name)
-
-        if self.stop_key_is_pressed:
-            print('Simulation STOP by keyboard')
-            self.sim_Stop()
-            time.sleep(0.1)
-            self.sim_Disable()
-            sys.exit(0)
-
-        returnCode, Dummy_1quaternion= self.sim.simxGetObjectQuaternion(self.clientID, self.Dummy_1Handle , -1, self.sim.simx_opmode_buffer)
-        self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
-        if (self.body_euler_angle['pitch']) < -0.785:
-            self.falling_Flag = 1                   # on stomach
-            self.simulateMotion(name = 'Soccer_Get_UP_Stomach_N')
-        if (self.body_euler_angle['pitch']) >  0.785:
-            self.falling_Flag = -1                  # face up
-            self.simulateMotion(name = 'Soccer_Get_UP_Face_Up')
-        if 0.785 < (self.body_euler_angle['roll']) < 2.356:
-            self.falling_Flag = -2                  # on right side
-            self.simulateMotion(name = 'Get_Up_Right')
-        if -2.356 < (self.body_euler_angle['roll']) < -0.785:
-            self.falling_Flag = 2                   # on left side
-            self.simulateMotion(name = 'Get_Up_Left')
-        return self.falling_Flag
-
-    def computeAlphaForWalk(self,sizes, limAlpha, hands_on = True ):
+    def compute_alpha_for_walk(self, sizes, limAlpha, hands_on=True):
         angles =[]
         anglesR=[]
         anglesL=[]
@@ -228,6 +188,92 @@ class MotionBase:
         self.activePose = angles
         return angles
 
+    def step_length_planer(self, regularStepLength, regularSideLength, framestep, hovernum):
+        if self.step_length_planer_is_on == True:
+            stepLength1 = regularStepLength
+            if - 0.08 <= self.body_euler_angle['pitch'] < - 0.045:
+                #stepLength1 += (-self.body_euler_angle['pitch']) * 2000
+                if stepLength1 > 140: stepLength1 = 140
+                if stepLength1 < -140: stepLength1 = -140
+                print('stepLength1=', stepLength1)
+            elif self.body_euler_angle['pitch'] < - 0.1:
+                stepLength1 = 140
+                print('stepLength1=', stepLength1)
+            elif 0.045 < self.body_euler_angle['pitch'] <= 0.1:
+                #stepLength1 += (-self.body_euler_angle['pitch']) * 2000
+                if stepLength1 > 140: stepLength1 = 140
+                if stepLength1 < -140: stepLength1 = -140
+                print('stepLength1=', stepLength1)
+            elif 0.08 < self.body_euler_angle['pitch'] :
+                stepLength1 = -140
+                print('stepLength1=', stepLength1)
+            xt0 = stepLength1 /2 * self.fr2 / (self.fr2 + framestep * hovernum)
+            if self.body_euler_angle['roll'] > 0:
+                self.modified_roll = self.body_euler_angle['roll'] - math.pi
+            else: self.modified_roll = self.body_euler_angle['roll'] + math.pi
+            if self.modified_roll > 0.2 :
+                sideLength = 60
+                print('sideLength = ', sideLength)
+            if self.modified_roll < -0.2 :
+                sideLength = -60
+                print('sideLength = ', sideLength)
+            else: sideLength = regularSideLength
+            dy0 = sideLength / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
+            dy = sideLength /(self.fr2 - hovernum * framestep) * framestep
+        else:
+            xt0 = regularStepLength /2 * self.fr2 / (self.fr2 + framestep * hovernum)
+            dy0 = regularSideLength / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
+            dy = regularSideLength /(self.fr2 - hovernum * framestep) * framestep
+        return xt0, dy0, dy
+
+    def feet_action(self):
+        angles = self.compute_alpha_for_walk(self.SIZES, self.LIM_ALPHA )
+        if not self.falling_Flag ==0: return
+        if len(angles)==0:
+            self.exitFlag = self.exitFlag +1
+            return False
+        else:
+            self.wait_sim_step()
+            self.sim.simxPauseCommunication(self.clientID, True)
+            for i in range(len(angles)):
+                returnCode = self.sim.simxSetJointTargetPosition(self.clientID,
+                            self.jointHandle[i] , angles[i]*self.FACTOR[i]+self.trims[i],
+                            self.sim.simx_opmode_oneshot)
+            self.sim.simxPauseCommunication(self.clientID, False)
+
+            time.sleep(self.slow_time)
+            returnCode, Dummy_Hposition= self.sim.simxGetObjectPosition(self.clientID, self.Dummy_1Handle , -1, self.sim.simx_opmode_buffer)
+            self.Dummy_HData.append(Dummy_Hposition)
+            returnCode, self.Ballposition= self.sim.simxGetObjectPosition(self.clientID, self.BallHandle , -1, self.sim.simx_opmode_buffer)
+            self.BallData.append(self.Ballposition)
+            returnCode, Dummy_1quaternion= self.sim.simxGetObjectQuaternion(self.clientID, self.Dummy_1Handle , -1, self.sim.simx_opmode_buffer)
+            self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
+            self.Dummy_1_YawData.append(self.imu_body_yaw())
+            self.Dummy_1_PitchData.append(self.body_euler_angle['pitch'])
+            if self.body_euler_angle['roll'] > 0:
+                self.modified_roll = self.body_euler_angle['roll'] - math.pi
+            else: self.modified_roll = self.body_euler_angle['roll'] + math.pi
+            self.Dummy_1_RollData.append(self.modified_roll)
+            #print(self.euler_angle)
+            self.timeElapsed = self.timeElapsed +1
+            delta_angles = []
+            for an in range(21):
+                delta_angles.append(round((angles[an] - self.tempangles[an])/0.2, 2))
+            #print(delta_angles)
+            report2 = ''
+            position_o = int(self.gaitHeight * math.tan(self.modified_roll))
+            position_l = self.ytl
+            position_r = self.ytr
+            self.position_o.append(position_o)
+            if self.ztl == -self.gaitHeight:
+                self.position_l.append(position_l)
+            else: self.position_l.append(-1000)
+            if self.ztr == -self.gaitHeight:
+                self.position_r.append(position_r)
+            else: self.position_r.append(1000)
+            self.tempangles = angles
+            return True
+
     def activation(self):
         time.sleep(0.1)
         self.sim.simxStartSimulation(self.clientID,self.sim.simx_opmode_oneshot)
@@ -243,25 +289,18 @@ class MotionBase:
         returnCode, self.Ballposition= self.sim.simxGetObjectPosition(self.clientID, self.BallHandle , -1, self.sim.simx_opmode_buffer)
         self.direction_To_Attack = self.norm_yaw(self.direction_To_Attack)
 
-    def reOrderServoData(self, servoDatas):
-        order = [0, 11, 1, 12, 2, 13, 3, 14, 4, 15, 5, 16, 6, 17, 7, 18, 8, 19, 9, 20, 10]
-        servoDatasOrdered = []
-        for orderNumber in order:
-            servoDatasOrdered.append(servoDatas[orderNumber])
-        return servoDatasOrdered
-
-    def walk_Initial_Pose(self):
+    def walk_initial_pose(self):
         self.robot_In_0_Pose = False
 
         self.xtr = self.xtl = 0
         amplitude = 70
-        framestep = self.simThreadCycleInMs//10
+        framestep = self.sim_thread_cycle_in_ms//10
         for j in range (self.initPoses):
             self.ztr = -223.1 + j*(223.1-self.gaitHeight)/self.initPoses
             self.ztl = -223.1 + j*(223.1-self.gaitHeight)/self.initPoses
             self.ytr = -self.d10 - j*amplitude/2 /self.initPoses
             self.ytl =  self.d10 - j*amplitude/2 /self.initPoses
-            angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA )
+            angles = self.compute_alpha_for_walk(self.SIZES, self.LIM_ALPHA )
             #if not self.falling_Flag ==0: return
             if len(angles)==0:
                 self.exitFlag = self.exitFlag +1
@@ -274,7 +313,7 @@ class MotionBase:
                                 self.sim.simx_opmode_oneshot)
                 self.sim.simxPauseCommunication(self.clientID, False)
 
-                time.sleep(self.slowTime)
+                time.sleep(self.slow_time)
                 returnCode, Dummy_Hposition= self.sim.simxGetObjectPosition(self.clientID,
                                       self.Dummy_HHandle , -1, self.sim.simx_opmode_buffer)
                 #self.Dummy_HData.append(Dummy_Hposition)
@@ -294,7 +333,7 @@ class MotionBase:
         alpha01 =  math.pi/self.fr2
         frameNumberPerCycle = 2*self.fr2
         frameNumberPerStep = self.fr2
-        framestep = self.simThreadCycleInMs//10
+        framestep = self.sim_thread_cycle_in_ms//10
         hovernum = 6     # number of steps hovering over take off + landing points
         xt0 = self.stepLength /2 * self.fr2 / (self.fr2 + framestep * hovernum)
         xtr0 = - self.stepLength /2 * self.fr2 / (self.fr2 + framestep * hovernum)
@@ -312,7 +351,7 @@ class MotionBase:
         wl_target = - rotation
                                                           # FASA 1 (Left support leg)
         if self.step_length_planer_is_on: print('pitch:', self.body_euler_angle['pitch'])
-        xt0, dy0, dy = self.stepLengthPlaner(self.stepLength, self.sideLength, framestep, hovernum)
+        xt0, dy0, dy = self.step_length_planer(self.stepLength, self.sideLength, framestep, hovernum)
         self.ztl = -self.gaitHeight
         xtl0  = self.xtl
         xtr0  = self.xtr
@@ -323,9 +362,9 @@ class MotionBase:
         for iii in range(0, frameNumberPerStep, framestep):
             start1 = 0
             if 2 * framestep < iii <  self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.stepLengthPlaner(self.stepLength, self.sideLength, framestep, hovernum)
+                xt0, dy0, dy = self.step_length_planer(self.stepLength, self.sideLength, framestep, hovernum)
                 #if cycle == 3 and iii >= 2 * framestep:
-                #    xt0, dy0, dy = self.stepLengthPlaner(self.stepLength, 60, framestep, hovernum)
+                #    xt0, dy0, dy = self.step_length_planer(self.stepLength, 60, framestep, hovernum)
                 xtl1 = -xt0
                 xtr1 = xt0
                 if cycle == 0:
@@ -387,14 +426,14 @@ class MotionBase:
             #    self.xl = 3 * self.xtl/ self.gaitHeight
             #else:
             #    self.xl = 0
-            successCode = self.feet_Action(start1)
+            successCode = self.feet_action()
             #print(iii, self.xtr, self.ytr, self.ztr, self.xr, self.yr, self.zr, self.wr, self.xtl, self.ytl, self.ztl, self.xl, self.yl, self.zl, self.wl, successCode)
 
                                         # FASA 2 ( Right support leg)
 
         self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']   #
         if self.step_length_planer_is_on: print('pitch:', self.body_euler_angle['pitch'])
-        xt0, dy0, dy = self.stepLengthPlaner(secondStepLength, self.sideLength, framestep, hovernum)
+        xt0, dy0, dy = self.step_length_planer(secondStepLength, self.sideLength, framestep, hovernum)
         xtl1  = self.xtl
         xtr1  = self.xtr
         #xtl1 = -xt0
@@ -411,7 +450,7 @@ class MotionBase:
         for iii in range(0, frameNumberPerStep, framestep):
             start1 = 0
             if 2 * framestep < iii <  self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.stepLengthPlaner(secondStepLength, self.sideLength, framestep, hovernum)
+                xt0, dy0, dy = self.step_length_planer(secondStepLength, self.sideLength, framestep, hovernum)
                 xtl1 = -xt0
                 xtr1 = xt0
                 if cycle == number_Of_Cycles - 1:
@@ -474,129 +513,13 @@ class MotionBase:
             #    self.xr = 3 * self.xtr/ self.gaitHeight
             #else:
             #    self.xr = 0
-            successCode = self.feet_Action(start1)
+            successCode = self.feet_action()
             #print(iii + self.fr2, self.xtr, self.ytr, self.ztr, self.xr, self.yr, self.zr, self.wr, self.xtl, self.ytl, self.ztl, self.xl, self.yl, self.zl, self.wl, successCode)
         # returning xr, xl, yr, yl to initial value
         self.xr, self.xl, self.yr, self.yl = xr_old, xl_old, yr_old, yl_old
         #self.first_Leg_Is_Right_Leg = tmp1
 
-    def stepLengthPlaner(self, regularStepLength, regularSideLength, framestep, hovernum):
-        if self.step_length_planer_is_on == True:
-            stepLength1 = regularStepLength
-            if - 0.08 <= self.body_euler_angle['pitch'] < - 0.045:
-                #stepLength1 += (-self.body_euler_angle['pitch']) * 2000
-                if stepLength1 > 140: stepLength1 = 140
-                if stepLength1 < -140: stepLength1 = -140
-                print('stepLength1=', stepLength1)
-            elif self.body_euler_angle['pitch'] < - 0.1:
-                stepLength1 = 140
-                print('stepLength1=', stepLength1)
-            elif 0.045 < self.body_euler_angle['pitch'] <= 0.1:
-                #stepLength1 += (-self.body_euler_angle['pitch']) * 2000
-                if stepLength1 > 140: stepLength1 = 140
-                if stepLength1 < -140: stepLength1 = -140
-                print('stepLength1=', stepLength1)
-            elif 0.08 < self.body_euler_angle['pitch'] :
-                stepLength1 = -140
-                print('stepLength1=', stepLength1)
-            xt0 = stepLength1 /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-            if self.body_euler_angle['roll'] > 0:
-                self.modified_roll = self.body_euler_angle['roll'] - math.pi
-            else: self.modified_roll = self.body_euler_angle['roll'] + math.pi
-            if self.modified_roll > 0.2 :
-                sideLength = 60
-                print('sideLength = ', sideLength)
-            if self.modified_roll < -0.2 :
-                sideLength = -60
-                print('sideLength = ', sideLength)
-            else: sideLength = regularSideLength
-            dy0 = sideLength / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
-            dy = sideLength /(self.fr2 - hovernum * framestep) * framestep
-        else:
-            xt0 = regularStepLength /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-            dy0 = regularSideLength / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
-            dy = regularSideLength /(self.fr2 - hovernum * framestep) * framestep
-        return xt0, dy0, dy
-
-    def feet_Action(self, start1):
-        angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA )
-        if not self.falling_Flag ==0: return
-        if len(angles)==0:
-            self.exitFlag = self.exitFlag +1
-            return False
-        else:
-            self.wait_sim_step()
-            self.sim.simxPauseCommunication(self.clientID, True)
-            for i in range(len(angles)):
-                returnCode = self.sim.simxSetJointTargetPosition(self.clientID,
-                            self.jointHandle[i] , angles[i]*self.FACTOR[i]+self.trims[i],
-                            self.sim.simx_opmode_oneshot)
-            self.sim.simxPauseCommunication(self.clientID, False)
-
-            time.sleep(self.slowTime)
-            returnCode, Dummy_Hposition= self.sim.simxGetObjectPosition(self.clientID, self.Dummy_1Handle , -1, self.sim.simx_opmode_buffer)
-            self.Dummy_HData.append(Dummy_Hposition)
-            returnCode, self.Ballposition= self.sim.simxGetObjectPosition(self.clientID, self.BallHandle , -1, self.sim.simx_opmode_buffer)
-            self.BallData.append(self.Ballposition)
-            returnCode, Dummy_1quaternion= self.sim.simxGetObjectQuaternion(self.clientID, self.Dummy_1Handle , -1, self.sim.simx_opmode_buffer)
-            self.body_euler_angle = self.quaternion_to_euler_angle(Dummy_1quaternion)
-            self.Dummy_1_YawData.append(self.imu_body_yaw())
-            self.Dummy_1_PitchData.append(self.body_euler_angle['pitch'])
-            if self.body_euler_angle['roll'] > 0:
-                self.modified_roll = self.body_euler_angle['roll'] - math.pi
-            else: self.modified_roll = self.body_euler_angle['roll'] + math.pi
-            self.Dummy_1_RollData.append(self.modified_roll)
-            #print(self.euler_angle)
-            self.timeElapsed = self.timeElapsed +1
-            delta_angles = []
-            for an in range(21):
-                delta_angles.append(round((angles[an] - self.tempangles[an])/0.2, 2))
-            #print(delta_angles)
-            report2 = ''
-            position_o = int(self.gaitHeight * math.tan(self.modified_roll))
-            position_l = self.ytl
-            position_r = self.ytr
-            self.position_o.append(position_o)
-            if self.ztl == -self.gaitHeight:
-                self.position_l.append(position_l)
-            else: self.position_l.append(-1000)
-            if self.ztr == -self.gaitHeight:
-                self.position_r.append(position_r)
-            else: self.position_r.append(1000)
-            self.tempangles = angles
-            return True
-
-    def walk_Final_Pose(self):
-        self.robot_In_0_Pose = False
-
-        initPoses = self.initPoses * 4
-        framestep = self.simThreadCycleInMs//10
-        for j in range (initPoses):
-            self.ztr = -self.gaitHeight - (j+1)*(223.1-self.gaitHeight)/initPoses
-            self.ztl = -self.gaitHeight - (j+1)*(223.1-self.gaitHeight)/initPoses
-            self.ytr = -self.d10 - (initPoses-(j+1))*self.amplitude/2 /initPoses
-            self.ytl =  self.d10 - (initPoses-(j+1))*self.amplitude/2 /initPoses
-            if j == initPoses - 1:
-                angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA, hands_on = False)
-            else: angles = self.computeAlphaForWalk(self.SIZES, self.LIM_ALPHA )
-            #if not self.falling_Flag ==0: return
-            if len(angles)==0:
-                self.exitFlag = self.exitFlag +1
-                print('walk_Final_Pose: failure with IK')
-            else:
-                self.wait_sim_step()
-                self.sim.simxPauseCommunication(self.clientID, True)
-                for i in range(len(angles)):
-                    returnCode = self.sim.simxSetJointTargetPosition(self.clientID,
-                                 self.jointHandle[i] , angles[i]*self.FACTOR[i]+self.trims[i],
-                                 self.sim.simx_opmode_oneshot)
-                self.sim.simxPauseCommunication(self.clientID, False)
-
-                time.sleep(self.slowTime)
-                returnCode, Dummy_Hposition= self.sim.simxGetObjectPosition(self.clientID,
-                                      self.Dummy_HHandle , -1, self.sim.simx_opmode_buffer)
-
-    def refresh_Orientation(self):
+    def refresh_orientation(self):
         returnCode, Dummy_Hquaternion= self.sim.simxGetObjectQuaternion(self.clientID, self.Dummy_HHandle , -1, self.sim.simx_opmode_buffer)
         self.euler_angle = self.quaternion_to_euler_angle(Dummy_Hquaternion)
         self.euler_angle['yaw'] -= self.direction_To_Attack
@@ -608,6 +531,7 @@ class MotionBase:
         if yaw > 0.5 : yaw = 0.5
         if yaw < -0.5 : yaw = -0.5
         return yaw
+
 
 if __name__=="__main__":
     print('This is not main module!')
