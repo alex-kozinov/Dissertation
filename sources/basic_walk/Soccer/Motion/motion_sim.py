@@ -161,12 +161,11 @@ class MotionSim(object):
         self.first_leg_is_right = True
 
         # Following paramenetrs Not recommended for change
-        self.amplitude = 32  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
-        self.fr1 = 8  # frame number for 1-st phase of gait ( two legs on floor)
-        self.fr2 = 12  # frame number for 2-nd phase of gait ( one leg in air)
+        self.amplitude = 20  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
+        self.fr1 = 0  # frame number for 1-st phase of gait ( two legs on floor)
+        self.fr2 = 24  # frame number for 2-nd phase of gait ( one leg in air)
         self.gait_height = 190  # Distance between Center of mass and floor in walk pose
         self.step_height = 32.0  # elevation of sole over floor
-        self.init_poses = 400 // self.sim_thread_cycle_in_ms
         self.alpha = Alpha()
         self.exit_flag = 0
         self.neck_pan = 0
@@ -192,11 +191,6 @@ class MotionSim(object):
                              'Leg_left_7', 'Leg_left_6', 'Leg_left_5', 'hand_left_4', 'hand_left_3', 'hand_left_2',
                              'hand_left_1', 'head0', 'head12']
         self.sim_backend = SimBackend(self.ACTIVEJOINTS, "Dummy_H")
-
-    def imu_body_yaw(self):
-        yaw = self.neck_pan * self.TIK2RAD + self.euler_angle['yaw']
-        yaw = self.norm_yaw(yaw)
-        return yaw
 
     @staticmethod
     def norm_yaw(yaw):
@@ -226,6 +220,25 @@ class MotionSim(object):
         euler_angle['pitch'] = math.radians(Y)
         euler_angle['roll'] = math.radians(Z)
         return euler_angle
+
+    @staticmethod
+    def normalize_rotation(yaw):
+        if abs(yaw) > 2 * math.pi:
+            yaw %= (2 * math.pi)
+        if yaw > math.pi:
+            yaw -= (2 * math.pi)
+        if yaw < -math.pi:
+            yaw += (2 * math.pi)
+        if yaw > 0.5:
+            yaw = 0.5
+        if yaw < -0.5:
+            yaw = -0.5
+        return yaw
+
+    def imu_body_yaw(self):
+        yaw = self.neck_pan * self.TIK2RAD + self.euler_angle['yaw']
+        yaw = self.norm_yaw(yaw)
+        return yaw
 
     def compute_alpha_for_walk(self):
         angles = []
@@ -297,20 +310,11 @@ class MotionSim(object):
         else:
             self.wait_sim_step()
             new_positions = []
+
             for i in range(len(angles)):
-                new_positions.append(angles[i] * self.FACTOR[i] + self.trims[i])
+                new_positions.append(angles[i] * self.FACTOR[i])
             self.sim_backend.set_joint_positions(new_positions)
             return True
-
-    def walk_initial_pose(self):
-        self.xtr = self.xtl = 0
-        amplitude = 70
-        for j in range(self.init_poses):
-            self.ztr = -223.1 + j * (223.1-self.gait_height) / self.init_poses
-            self.ztl = -223.1 + j * (223.1-self.gait_height) / self.init_poses
-            self.ytr = -self.d10 - j * amplitude / 2 / self.init_poses
-            self.ytl = self.d10 - j * amplitude / 2 / self.init_poses
-            self.feet_action()
 
     def walk_cycle(self, step_length, side_length, rotation, cycle, number_of_cycles, second_step_length=1000):
         self.step_length = step_length
@@ -462,33 +466,53 @@ class MotionSim(object):
         dummy_h_quaternion = self.sim_backend.get_imu_quaternion()
         self.euler_angle = self.quaternion_to_euler_angle(dummy_h_quaternion)
 
-    @staticmethod
-    def normalize_rotation(yaw):
-        if abs(yaw) > 2 * math.pi:
-            yaw %= (2 * math.pi)
-        if yaw > math.pi:
-            yaw -= (2 * math.pi)
-        if yaw < -math.pi:
-            yaw += (2 * math.pi)
-        if yaw > 0.5:
-            yaw = 0.5
-        if yaw < -0.5:
-            yaw = -0.5
-        return yaw
+    def acting(self):
+        number_of_cycles = 25
+        step_length = 90
+        side_length = 0
+
+        if self.first_leg_is_right:
+            invert = -1
+        else:
+            invert = 1
+
+        self.refresh_orientation()
+
+        self.xtr = self.xtl = 0
+        amplitude = 70
+        for i in range(self.fr2):
+            self.ztr = -223.1 + i * (223.1-self.gait_height) / self.fr2
+            self.ztl = -223.1 + i * (223.1-self.gait_height) / self.fr2
+            self.ytr = -self.d10 - i * amplitude / 2 / self.fr2
+            self.ytl = self.d10 - i * amplitude / 2 / self.fr2
+            self.feet_action()
+
+        number_of_cycles += 1
+        for cycle in range(number_of_cycles):
+            step_length_1 = step_length
+            second_step_length = step_length_1
+            if cycle == 0:
+                step_length_1 = step_length/3
+                second_step_length = step_length/3
+            if cycle == 1:
+                step_length_1 = step_length/3 * 2
+                second_step_length = step_length/3 * 2
+
+            self.refresh_orientation()
+
+            rotation = invert * self.imu_body_yaw() * 1.2
+            rotation = self.normalize_rotation(rotation)
+            self.walk_cycle(
+                step_length_1,
+                side_length,
+                rotation,
+                cycle,
+                number_of_cycles,
+                second_step_length=second_step_length
+            )
 
     def wait_sim_step(self):
         self.sim_backend.wait_step()
-
-    def sim_start(self):
-        self.sim_backend.start()
-        self.trims = self.sim_backend.get_joint_positions()
-
-    def sim_stop(self):
-        self.sim_backend.stop()
-        self.sim_backend.set_joint_positions(self.trims)
-
-    def sim_disable(self):
-        self.sim_backend.disable()
 
 
 if __name__ == "__main__":
