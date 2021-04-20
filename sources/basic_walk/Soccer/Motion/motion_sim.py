@@ -103,7 +103,6 @@ class MotionSim(object):
         self.wl = 0
         self.euler_angle = {}
         self.modified_roll = 0
-        self.tempangle = 0
         self.tempangles = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         self.ACTIVEJOINTS = ['Leg_right_10', 'Leg_right_9', 'Leg_right_8', 'Leg_right_7', 'Leg_right_6', 'Leg_right_5',
                              'hand_right_4',
@@ -113,17 +112,21 @@ class MotionSim(object):
                              'hand_left_1', 'head0', 'head12']
 
     def imu_body_yaw(self):
-        yaw = self.neck_pan*self.TIK2RAD + self.euler_angle['yaw']
+        yaw = self.neck_pan * self.TIK2RAD + self.euler_angle['yaw']
         yaw = self.norm_yaw(yaw)
         return yaw
 
-    def norm_yaw(self, yaw):
+    @staticmethod
+    def norm_yaw(yaw):
         yaw %= 2 * math.pi
-        if yaw > math.pi:  yaw -= 2* math.pi
-        if yaw < -math.pi: yaw += 2* math.pi
+        if yaw > math.pi:
+            yaw -= 2 * math.pi
+        if yaw < -math.pi:
+            yaw += 2 * math.pi
         return yaw
 
-    def quaternion_to_euler_angle(self, quaternion):
+    @staticmethod
+    def quaternion_to_euler_angle(quaternion):
         euler_angle = {}
         w,x,y,z = quaternion
         ysqr = y*y
@@ -142,27 +145,28 @@ class MotionSim(object):
         euler_angle['roll'] = math.radians(Z)
         return euler_angle
 
-    def compute_alpha_for_walk(self, sizes, limAlpha, hands_on=True):
-        angles =[]
-        anglesR = self.alpha.compute_alpha_v3(self.xtr,self.ytr,self.ztr,self.xr,self.yr,self.zr,self.wr, sizes, limAlpha)
-        anglesL = self.alpha.compute_alpha_v3(self.xtl,-self.ytl,self.ztl,self.xl,-self.yl,self.zl,self.wl, sizes, limAlpha)
+    def compute_alpha_for_walk(self):
+        angles = []
+        hands_on = True
+        angles_r = self.alpha.compute_alpha_v3(self.xtr, self.ytr, self.ztr, self.xr, self.yr, self.zr, self.wr, self.SIZES, self.LIM_ALPHA)
+        angles_l = self.alpha.compute_alpha_v3(self.xtl, -self.ytl, self.ztl, self.xl, -self.yl, self.zl, self.wl, self.SIZES, self.LIM_ALPHA)
 
-        if len(anglesR)>1:
-            for i in range(len(anglesR)):
-                if len(anglesR)==1: break
-                if anglesR[0][2]<anglesR[1][2]: anglesR.pop(1)
-                else: anglesR.pop(0)
-        elif len(anglesR)==0:
+        if len(angles_r)>1:
+            for i in range(len(angles_r)):
+                if len(angles_r)==1: break
+                if angles_r[0][2]<angles_r[1][2]: angles_r.pop(1)
+                else: angles_r.pop(0)
+        elif len(angles_r)==0:
             return[]
-        if len(anglesL)>1:
-            for i in range(len(anglesL)):
-                if len(anglesL)==1: break
-                if anglesL[0][2]<anglesL[1][2]: anglesL.pop(1)
-                else: anglesL.pop(0)
-        elif len(anglesL)==0:
+        if len(angles_l)>1:
+            for i in range(len(angles_l)):
+                if len(angles_l)==1: break
+                if angles_l[0][2]<angles_l[1][2]: angles_l.pop(1)
+                else: angles_l.pop(0)
+        elif len(angles_l)==0:
             return[]
         if self.first_leg_is_right == True:
-            for j in range(6): angles.append(anglesR[0][j])
+            for j in range(6): angles.append(angles_r[0][j])
             if hands_on: angles.append(1.745)
             else: angles.append(0.0)
             angles.append(0.0)
@@ -170,7 +174,7 @@ class MotionSim(object):
             if hands_on: angles.append(0.524 - self.xtl/57.3)
             else: angles.append(0.0)
             angles.append(0.0)
-            for j in range(6): angles.append(-anglesL[0][j])
+            for j in range(6): angles.append(-angles_l[0][j])
             if hands_on: angles.append(-1.745)
             else: angles.append(0.0)
             angles.append(0.0)
@@ -178,7 +182,7 @@ class MotionSim(object):
             if hands_on: angles.append(-0.524 + self.xtr/57.3)
             else: angles.append(0.0)
         else:
-            for j in range(6): angles.append(anglesL[0][j])
+            for j in range(6): angles.append(angles_l[0][j])
             if hands_on: angles.append(1.745)
             else: angles.append(0.0)
             angles.append(0.0)
@@ -186,7 +190,7 @@ class MotionSim(object):
             if hands_on: angles.append(0.524 - self.xtr/57.3)
             else: angles.append(0.0)
             angles.append(0.0)                                  # Tors
-            for j in range(6): angles.append(-anglesR[0][j])
+            for j in range(6): angles.append(-angles_r[0][j])
             if hands_on: angles.append(-1.745)
             else: angles.append(0.0)
             angles.append(0.0)
@@ -235,7 +239,7 @@ class MotionSim(object):
         return xt0, dy0, dy
 
     def feet_action(self):
-        angles = self.compute_alpha_for_walk(self.SIZES, self.LIM_ALPHA )
+        angles = self.compute_alpha_for_walk()
         if not self.falling_flag ==0: return
         if len(angles)==0:
             self.exit_flag = self.exit_flag +1
@@ -288,7 +292,7 @@ class MotionSim(object):
             self.ztl = -223.1 + j*(223.1-self.gait_height)/self.init_poses
             self.ytr = -self.d10 - j*amplitude/2 /self.init_poses
             self.ytl =  self.d10 - j*amplitude/2 /self.init_poses
-            angles = self.compute_alpha_for_walk(self.SIZES, self.LIM_ALPHA )
+            angles = self.compute_alpha_for_walk()
             if len(angles)==0:
                 self.exit_flag = self.exit_flag +1
             else:
