@@ -28,8 +28,8 @@ class Player(object):
 
         self.balancing_test_main_cycle()
 
-        self.motion.sim_Stop()
-        self.motion.sim_Disable()
+        self.motion.sim_stop()
+        self.motion.sim_disable()
 
     def common_init(self):
         self.motion.activation()
@@ -41,9 +41,9 @@ class Player(object):
         self.motion.fr2 = 24
         self.motion.initPoses = self.motion.fr2
 
-        number_Of_Cycles = 5
-        stepLength = 64
-        sideLength = 0
+        number_of_cycles = 5
+        step_length = 64
+        side_length = 0
 
         if self.motion.first_leg_is_right:
             invert = -1
@@ -51,36 +51,31 @@ class Player(object):
             invert = 1
 
         self.motion.walk_initial_pose()
-        number_Of_Cycles += 1
-        for cycle in range(number_Of_Cycles):
-            stepLength1 = stepLength
-            secondStepLength = stepLength1
-            if cycle == 0 :
-                stepLength1 = stepLength/3
-                secondStepLength = stepLength/3
-            if cycle == 1 :
-                stepLength1 = stepLength/3 * 2
-                secondStepLength = stepLength/3 * 2
+        number_of_cycles += 1
+        for cycle in range(number_of_cycles):
+            step_length_1 = step_length
+            second_step_length = step_length_1
+            if cycle == 0:
+                step_length_1 = step_length/3
+                second_step_length = step_length/3
+            if cycle == 1:
+                step_length_1 = step_length/3 * 2
+                second_step_length = step_length/3 * 2
 
             self.motion.refresh_orientation()
 
-            rotation = 0 + invert * self.motion.imu_body_yaw() * 1.2
+            rotation = invert * self.motion.imu_body_yaw() * 1.2
             rotation = self.motion.normalize_rotation(rotation)
             self.motion.walk_cycle(
-                stepLength1,
-                sideLength,
+                step_length_1,
+                side_length,
                 rotation,
                 cycle,
-                number_Of_Cycles,
-                secondStepLength=secondStepLength
+                number_of_cycles,
+                second_step_length=second_step_length
             )
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     player = Player()
     player.simulation()
-
-
-
-
-
