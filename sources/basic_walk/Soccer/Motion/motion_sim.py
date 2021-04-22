@@ -155,11 +155,10 @@ class MotionSim(object):
         self.TIK2RAD = 0.00058909
         self.slow_time = 0.0  # seconds
         self.sim_thread_cycle_in_ms = 20
-        self.step_length = 0.0  # -50 - +70. Best choise 64 for forward. Maximum safe value for backward step -50.
-        self.side_length = 0.0  # -20 - +20. Side step length to right (+) and to left (-)
         self.rotation = 0  # -45 - +45 degrees Centigrade per step + CW, - CCW.
         self.first_leg_is_right = True
-
+        self.step_length = 90
+        self.side_length = 0
         # Following paramenetrs Not recommended for change
         self.amplitude = 20  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
         self.fr1 = 0  # frame number for 1-st phase of gait ( two legs on floor)
@@ -308,7 +307,7 @@ class MotionSim(object):
             self.exit_flag = self.exit_flag + 1
             return False
         else:
-            self.wait_sim_step()
+            self.sim_backend.wait_step()
             new_positions = []
 
             for i in range(len(angles)):
@@ -316,21 +315,28 @@ class MotionSim(object):
             self.sim_backend.set_joint_positions(new_positions)
             return True
 
-    def walk_cycle(self, step_length, side_length, rotation, cycle, number_of_cycles, second_step_length=1000):
-        self.step_length = step_length
-        self.side_length = side_length
+    def walk_cycle(self, rotation, cycle, number_of_cycles):
         self.rotation = math.degrees(rotation)
+        side_length = self.side_length
+        step_length = self.step_length
+        second_step_length = self.step_length
+        if cycle == 0:
+            step_length = step_length / 3
+            second_step_length = step_length / 3
+        if cycle == 1:
+            step_length = step_length / 3 * 2
+            second_step_length = step_length / 3 * 2
 
         rotation = -self.rotation/286
         alpha01 = math.pi/self.fr2
         frameNumberPerStep = self.fr2
         framestep = self.sim_thread_cycle_in_ms//10
         hovernum = 6     # number of steps hovering over take off + landing points
-        xt0 = self.step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-        xtr0 = - self.step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-        dx0_typical = self.step_length/(self.fr2+ hovernum * framestep)*framestep        # CoM propulsion forward per framestep
-        dy0 = self.side_length / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
-        dy = self.side_length /(self.fr2 - hovernum * framestep) * framestep
+        xt0 = step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
+        xtr0 = - step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
+        dx0_typical = step_length/(self.fr2+ hovernum * framestep)*framestep        # CoM propulsion forward per framestep
+        dy0 = side_length / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
+        dy = side_length /(self.fr2 - hovernum * framestep) * framestep
         xr_old, xl_old, yr_old, yl_old = self.xr, self.xl, self.yr, self.yl
         # correction of sole skew depending on side angle of body when step pushes land
         self.yr, self.yl = - self.params['SOLE_LANDING_SKEW'], self.params['SOLE_LANDING_SKEW']
@@ -341,7 +347,7 @@ class MotionSim(object):
         wr_target = - rotation
         wl_target = - rotation
 
-        xt0, dy0, dy = self.step_length_planer(self.step_length, self.side_length, framestep, hovernum)
+        xt0, dy0, dy = self.step_length_planer(step_length, side_length, framestep, hovernum)
         self.ztl = -self.gait_height
         xtl0 = self.xtl
         xtr0 = self.xtr
@@ -351,8 +357,8 @@ class MotionSim(object):
         dx = (xtr1 - xtr0) * framestep / self.fr2 * (self.fr2 + hovernum * framestep)/ (self.fr2 - hovernum * framestep)
         for iii in range(0, frameNumberPerStep, framestep):
             start1 = 0
-            if 2 * framestep < iii <  self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.step_length_planer(self.step_length, self.side_length, framestep, hovernum)
+            if 2 * framestep < iii < self.fr2 - 4 * framestep:
+                xt0, dy0, dy = self.step_length_planer(step_length, side_length, framestep, hovernum)
 
                 xtl1 = -xt0
                 xtr1 = xt0
@@ -398,9 +404,9 @@ class MotionSim(object):
 
         self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']   #
 
-        xt0, dy0, dy = self.step_length_planer(second_step_length, self.side_length, framestep, hovernum)
-        xtl1  = self.xtl
-        xtr1  = self.xtr
+        xt0, dy0, dy = self.step_length_planer(second_step_length, side_length, framestep, hovernum)
+        xtl1 = self.xtl
+        xtr1 = self.xtr
         self.ztr = -self.gait_height
         if cycle == number_of_cycles - 1:
             xtl2 = 0
@@ -413,7 +419,7 @@ class MotionSim(object):
         for iii in range(0, frameNumberPerStep, framestep):
             start1 = 0
             if 2 * framestep < iii <  self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.step_length_planer(second_step_length, self.side_length, framestep, hovernum)
+                xt0, dy0, dy = self.step_length_planer(second_step_length, side_length, framestep, hovernum)
                 xtl1 = -xt0
                 xtr1 = xt0
                 if cycle == number_of_cycles - 1:
@@ -467,18 +473,9 @@ class MotionSim(object):
         self.euler_angle = self.quaternion_to_euler_angle(dummy_h_quaternion)
 
     def acting(self):
-        number_of_cycles = 25
-        step_length = 90
-        side_length = 0
-
-        if self.first_leg_is_right:
-            invert = -1
-        else:
-            invert = 1
-
         self.refresh_orientation()
 
-        self.xtr = self.xtl = 0
+        number_of_cycles = 25
         amplitude = 70
         for i in range(self.fr2):
             self.ztr = -223.1 + i * (223.1-self.gait_height) / self.fr2
@@ -489,30 +486,17 @@ class MotionSim(object):
 
         number_of_cycles += 1
         for cycle in range(number_of_cycles):
-            step_length_1 = step_length
-            second_step_length = step_length_1
-            if cycle == 0:
-                step_length_1 = step_length/3
-                second_step_length = step_length/3
-            if cycle == 1:
-                step_length_1 = step_length/3 * 2
-                second_step_length = step_length/3 * 2
-
             self.refresh_orientation()
-
-            rotation = invert * self.imu_body_yaw() * 1.2
+            rotation = self.imu_body_yaw() * 1.2
+            if self.first_leg_is_right:
+                rotation *= -1
             rotation = self.normalize_rotation(rotation)
+
             self.walk_cycle(
-                step_length_1,
-                side_length,
                 rotation,
                 cycle,
-                number_of_cycles,
-                second_step_length=second_step_length
+                number_of_cycles
             )
-
-    def wait_sim_step(self):
-        self.sim_backend.wait_step()
 
 
 if __name__ == "__main__":
