@@ -328,9 +328,6 @@ class MotionSim(object):
         self.euler_angle = self.quaternion_to_euler_angle(dummy_h_quaternion)
 
     def act(self):
-        # if self.walk_cycle_step == self.total_walk_cycle_steps:
-        #     self.walk_cycle_step = 0
-        #     self.general_step +1
         if self.general_step >= self.total_steps:
             return False
 
@@ -345,6 +342,7 @@ class MotionSim(object):
             self.ytr = -self.d10 - i * amplitude / 2 / self.fr2
             self.ytl = self.d10 - i * amplitude / 2 / self.fr2
             self.feet_action()
+            self.general_step += 1
         else:
             for self.walk_cycle_step in range(self.total_walk_cycle_steps):
                 if self.walk_cycle_step == 0:
@@ -488,8 +486,9 @@ class MotionSim(object):
                     if self.ytl < 54:
                         self.ytl = 54
                 self.feet_action()
-            self.xr, self.xl, self.yr, self.yl = self.xr_old, self.xl_old, self.yr_old, self.yl_old
-        self.general_step += 1
+            if self.walk_cycle_step == self.total_walk_cycle_steps:
+                self.xr, self.xl, self.yr, self.yl = self.xr_old, self.xl_old, self.yr_old, self.yl_old
+                self.general_step += 1
         return True
 
 
