@@ -157,8 +157,8 @@ class MotionSim(object):
         self.sim_thread_cycle_in_ms = 20
         self.rotation = 0  # -45 - +45 degrees Centigrade per step + CW, - CCW.
         self.first_leg_is_right = True
-        self.step_length = 90
-        self.side_length = 0
+        self.base_step_length = 90
+        self.base_side_length = 0
         # Following paramenetrs Not recommended for change
         self.amplitude = 20  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
         self.fr1 = 0  # frame number for 1-st phase of gait ( two legs on floor)
@@ -189,7 +189,15 @@ class MotionSim(object):
                              'Leg_left_8',
                              'Leg_left_7', 'Leg_left_6', 'Leg_left_5', 'hand_left_4', 'hand_left_3', 'hand_left_2',
                              'hand_left_1', 'head0', 'head12']
+        self.cycle = 0
+        self.number_of_cycles = 25
+        self.general_step = 0
+        self.total_steps = self.fr2 + self.number_of_cycles
         self.sim_backend = SimBackend(self.ACTIVEJOINTS, "Dummy_H")
+        self.framestep = self.sim_thread_cycle_in_ms // 10
+        self.walk_cycle_steps_each_leg = self.fr2 // self.framestep
+        self.total_walk_cycle_steps = 2 * self.walk_cycle_steps_each_leg
+        self.walk_cycle_step = 0
 
     @staticmethod
     def norm_yaw(yaw):
@@ -295,10 +303,10 @@ class MotionSim(object):
             angles.append(0.0)
         return angles
 
-    def step_length_planer(self, regular_step_length, regular_side_length, framestep, hovernum):
-        xt0 = regular_step_length / 2 * self.fr2 / (self.fr2 + framestep * hovernum)
-        dy0 = regular_side_length / (self.fr2 + hovernum * framestep) * framestep
-        dy = regular_side_length / (self.fr2 - hovernum * framestep) * framestep
+    def step_length_planer(self, regular_step_length, regular_side_length, framestep, hovernum1):
+        xt0 = regular_step_length / 2 * self.fr2 / (self.fr2 + framestep * hovernum1)
+        dy0 = regular_side_length / (self.fr2 + hovernum1 * framestep) * framestep
+        dy = regular_side_length / (self.fr2 - hovernum1 * framestep) * framestep
         return xt0, dy0, dy
 
     def feet_action(self):
@@ -315,188 +323,174 @@ class MotionSim(object):
             self.sim_backend.set_joint_positions(new_positions)
             return True
 
-    def walk_cycle(self, rotation, cycle, number_of_cycles):
-        self.rotation = math.degrees(rotation)
-        side_length = self.side_length
-        step_length = self.step_length
-        second_step_length = self.step_length
-        if cycle == 0:
-            step_length = step_length / 3
-            second_step_length = step_length / 3
-        if cycle == 1:
-            step_length = step_length / 3 * 2
-            second_step_length = step_length / 3 * 2
-
-        rotation = -self.rotation/286
-        alpha01 = math.pi/self.fr2
-        frameNumberPerStep = self.fr2
-        framestep = self.sim_thread_cycle_in_ms//10
-        hovernum = 6     # number of steps hovering over take off + landing points
-        xt0 = step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-        xtr0 = - step_length /2 * self.fr2 / (self.fr2 + framestep * hovernum)
-        dx0_typical = step_length/(self.fr2+ hovernum * framestep)*framestep        # CoM propulsion forward per framestep
-        dy0 = side_length / (self.fr2 + hovernum * framestep) * framestep        # CoM propulsion sideways per framestep
-        dy = side_length /(self.fr2 - hovernum * framestep) * framestep
-        xr_old, xl_old, yr_old, yl_old = self.xr, self.xl, self.yr, self.yl
-        # correction of sole skew depending on side angle of body when step pushes land
-        self.yr, self.yl = - self.params['SOLE_LANDING_SKEW'], self.params['SOLE_LANDING_SKEW']
-        # correction of body tilt forward
-        self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']   #
-        wr_old = self.wr
-        wl_old = self.wl
-        wr_target = - rotation
-        wl_target = - rotation
-
-        xt0, dy0, dy = self.step_length_planer(step_length, side_length, framestep, hovernum)
-        self.ztl = -self.gait_height
-        xtl0 = self.xtl
-        xtr0 = self.xtr
-        xtl1 = -xt0
-        xtr1 = xt0
-        dx0 = (xtl1 - xtl0) * framestep / self.fr2
-        dx = (xtr1 - xtr0) * framestep / self.fr2 * (self.fr2 + hovernum * framestep)/ (self.fr2 - hovernum * framestep)
-        for iii in range(0, frameNumberPerStep, framestep):
-            start1 = 0
-            if 2 * framestep < iii < self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.step_length_planer(step_length, side_length, framestep, hovernum)
-
-                xtl1 = -xt0
-                xtr1 = xt0
-                if cycle == 0:
-                    xtl0 = 0
-                    xtr0 = 0
-                else:
-                    xtl0 = xt0
-                    xtr0 = -xt0
-                dx0 = (xtl1 - self.xtl) * framestep / (self.fr2 - iii)
-                dx = (- self.xtr - self.xtl - dx0  * ( (self.fr2 - iii)/ framestep + 3)) /( (self.fr2 - iii)/ framestep - 3)
-            S = self.amplitude/2 *math.sin(alpha01 * iii )
-            self.ytr = -S - self.d10
-            self.ytl = -S + self.d10
-            self.ztr = -self.gait_height
-            if iii== 0 :
-                self.ztr = -self.gait_height + self.step_height / 3
-            elif iii== framestep:
-                self.ztr = -self.gait_height + self.step_height * 2 / 3
-            elif iii==self.fr2 - framestep:
-                self.ztr = -self.gait_height + self.step_height / 4
-            elif iii==self.fr2 - 2 * framestep:
-                self.ztr = -self.gait_height + self.step_height * 2 / 4
-            elif iii==self.fr2 - 3 * framestep:
-                self.ztr = -self.gait_height + self.step_height * 3 / 4
-            else:
-                self.ztr = -self.gait_height + self.step_height
-            if iii == 0 or iii == framestep or iii == 2 * framestep:
-                self.xtr += dx0
-                self.ytr = -64 + dy0 * iii
-            elif iii == self.fr2 - framestep or iii == self.fr2 - 2 * framestep or iii == self.fr2 - 3 * framestep:
-                self.xtr += dx0
-                self.ytr = -64 + dy0 * 3 * framestep - dy*(self.fr2 - 3 * framestep)/2 + dy0 * (iii - (self.fr2 - 3 * framestep))
-            else:
-                self.xtr += dx
-                self.ytr = - 64 + dy0 * 3 * framestep - dy*iii/2
-                self.wr = wr_old + (wr_target - wr_old) * (iii)/(self.fr2 - hovernum * framestep)
-                self.wl = wl_old + (wl_target - wl_old) * (iii)/(self.fr2- hovernum * framestep)
-
-            self.xtl += dx0
-            self.ytl = -S + self.d10 + dy0 * iii
-            self.feet_action()
-
-        self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']   #
-
-        xt0, dy0, dy = self.step_length_planer(second_step_length, side_length, framestep, hovernum)
-        xtl1 = self.xtl
-        xtr1 = self.xtr
-        self.ztr = -self.gait_height
-        if cycle == number_of_cycles - 1:
-            xtl2 = 0
-            xtr2 = 0
-        else:
-            xtl2 = xt0
-            xtr2 = -xt0
-        dx0 = (xtr2 - xtr1) * framestep / self.fr2
-        dx = - dx0 * (self.fr2 + hovernum * framestep)/ (self.fr2 - hovernum * framestep)
-        for iii in range(0, frameNumberPerStep, framestep):
-            start1 = 0
-            if 2 * framestep < iii <  self.fr2 - 4 * framestep:
-                xt0, dy0, dy = self.step_length_planer(second_step_length, side_length, framestep, hovernum)
-                xtl1 = -xt0
-                xtr1 = xt0
-                if cycle == number_of_cycles - 1:
-                    xtl2 = 0
-                    xtr2 = 0
-                else:
-                    xtl2 = xt0
-                    xtr2 = -xt0
-                dx0 = (xtr2 - self.xtr) * framestep / (self.fr2 - iii)
-                dx = (- self.xtr - self.xtl - dx0  * ( (self.fr2 - iii)/ framestep + 3)) /( (self.fr2 - iii)/ framestep - 3)
-            S = -self.amplitude/2 *math.sin(alpha01 * iii)
-            self.ytr = -S - self.d10
-            self.ytl = -S + self.d10
-            self.ztl = -self.gait_height
-            if iii == 0:
-                self.ztl = -self.gait_height + self.step_height / 3
-            elif iii == framestep:
-                self.ztl = -self.gait_height + self.step_height * 2 / 3
-            elif iii == self.fr2 - framestep:
-                self.ztl = -self.gait_height + self.step_height / 4
-            elif iii == self.fr2 - 2 * framestep:
-                self.ztl = -self.gait_height + self.step_height * 2 / 4
-            elif iii == self.fr2 - 3 * framestep:
-                self.ztl = -self.gait_height + self.step_height * 3 / 4
-            else:
-                self.ztl = -self.gait_height + self.step_height
-            if cycle == number_of_cycles - 1:
-                if iii== (self.fr2 - framestep):
-                    self.ztl = -self.gait_height
-                    self.ytl = S + self.d10
-            if iii == 0 or iii == framestep or iii == 2 * framestep :
-                self.xtl += dx0
-                self.ytl = S + self.d10 + dy0 * iii
-            elif iii == self.fr2 - framestep or iii == self.fr2 - 2 * framestep or iii == self.fr2 - 3 * framestep :
-                self.xtl += dx0
-                self.ytl = S + 64 + dy0 * 3 * framestep - dy * (self.fr2 - hovernum * framestep) + dy0 * (iii - (self.fr2 - 3 * framestep))
-            else:
-                self.xtl += dx
-                self.ytl = S + 64 + dy0 * 3 * framestep - dy * (iii - 3 * framestep)
-                self.wr = wr_target * (1 - iii / (self.fr2 - hovernum * framestep) * 2)
-                self.wl = wl_target * (1 - iii / (self.fr2 - hovernum * framestep) * 2)
-            self.xtr += dx0
-            self.ytr += dy0
-            if self.ytl < 54:
-                self.ytl = 54
-            self.feet_action()
-        self.xr, self.xl, self.yr, self.yl = xr_old, xl_old, yr_old, yl_old
-
     def refresh_orientation(self):
         dummy_h_quaternion = self.sim_backend.get_imu_quaternion()
         self.euler_angle = self.quaternion_to_euler_angle(dummy_h_quaternion)
 
-    def acting(self):
-        self.refresh_orientation()
+    def act(self):
+        # if self.walk_cycle_step == self.total_walk_cycle_steps:
+        #     self.walk_cycle_step = 0
+        #     self.general_step +1
+        if self.general_step >= self.total_steps:
+            return False
 
-        number_of_cycles = 25
-        amplitude = 70
-        for i in range(self.fr2):
+        if not self.general_step:
+            self.refresh_orientation()
+
+        if self.general_step < self.fr2:
+            i = self.general_step
+            amplitude = 70
             self.ztr = -223.1 + i * (223.1-self.gait_height) / self.fr2
             self.ztl = -223.1 + i * (223.1-self.gait_height) / self.fr2
             self.ytr = -self.d10 - i * amplitude / 2 / self.fr2
             self.ytl = self.d10 - i * amplitude / 2 / self.fr2
             self.feet_action()
+        else:
+            for self.walk_cycle_step in range(self.total_walk_cycle_steps):
+                if self.walk_cycle_step == 0:
+                    self.cycle = self.general_step - self.fr2
+                    self.refresh_orientation()
+                    self.rotation = self.imu_body_yaw() * 1.2
+                    if self.first_leg_is_right:
+                        self.rotation *= -1
+                    self.rotation = self.normalize_rotation(self.rotation)
 
-        number_of_cycles += 1
-        for cycle in range(number_of_cycles):
-            self.refresh_orientation()
-            rotation = self.imu_body_yaw() * 1.2
-            if self.first_leg_is_right:
-                rotation *= -1
-            rotation = self.normalize_rotation(rotation)
+                    self.rotation = math.degrees(self.rotation)
+                    self.side_length = self.base_side_length
+                    self.step_length = self.base_step_length
+                    self.second_step_length = self.base_step_length
+                    if self.cycle == 0:
+                        self.step_length = self.step_length / 3
+                        self.second_step_length = self.step_length / 3
+                    if self.cycle == 1:
+                        self.step_length = self.step_length / 3 * 2
+                        self.second_step_length = self.step_length / 3 * 2
 
-            self.walk_cycle(
-                rotation,
-                cycle,
-                number_of_cycles
-            )
+                    self.rotation = -self.rotation / 286
+                    self.alpha01 = math.pi / self.fr2
+                    self.hovernum = 6  # number of steps hovering over take off + landing points
+                    self.xr_old, self.xl_old, self.yr_old, self.yl_old = self.xr, self.xl, self.yr, self.yl
+                    # correction of sole skew depending on side angle of body when step pushes land
+                    self.yr, self.yl = - self.params['SOLE_LANDING_SKEW'], self.params['SOLE_LANDING_SKEW']
+                    # correction of body tilt forward
+                    self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']  #
+                    self.wr_old = self.wr
+                    self.wl_old = self.wl
+                    self.wr_target = - self.rotation
+                    self.wl_target = - self.rotation
+                    xt0, dy0, dy = self.step_length_planer(self.step_length, self.side_length, self.framestep,
+                                                           self.hovernum)
+                    self.ztl = -self.gait_height
+                    xtl0 = self.xtl
+                    xtr0 = self.xtr
+                    xtl1 = -xt0
+                    xtr1 = xt0
+                    dx0 = (xtl1 - xtl0) * self.framestep / self.fr2
+                    dx = (xtr1 - xtr0) * self.framestep / self.fr2 * (self.fr2 + self.hovernum * self.framestep) / (
+                        self.fr2 - self.hovernum * self.framestep)
+                if self.walk_cycle_step < self.walk_cycle_steps_each_leg:
+                    iii = self.walk_cycle_step * self.framestep
+                    if 2 * self.framestep < iii < self.fr2 - 4 * self.framestep:
+                        xt0, dy0, dy = self.step_length_planer(self.step_length, self.side_length, self.framestep, self.hovernum)
+
+                        xtl1 = -xt0
+                        dx0 = (xtl1 - self.xtl) * self.framestep / (self.fr2 - iii)
+                        dx = (- self.xtr - self.xtl - dx0 * ((self.fr2 - iii) / self.framestep + 3)) / (
+                                (self.fr2 - iii) / self.framestep - 3)
+                    S = self.amplitude / 2 * math.sin(self.alpha01 * iii)
+                    self.ytr = -S - self.d10
+                    self.ytl = -S + self.d10
+                    self.ztr = -self.gait_height
+                    if iii == 0:
+                        self.ztr = -self.gait_height + self.step_height / 3
+                    elif iii == self.framestep:
+                        self.ztr = -self.gait_height + self.step_height * 2 / 3
+                    elif iii == self.fr2 - self.framestep:
+                        self.ztr = -self.gait_height + self.step_height / 4
+                    elif iii == self.fr2 - 2 * self.framestep:
+                        self.ztr = -self.gait_height + self.step_height * 2 / 4
+                    elif iii == self.fr2 - 3 * self.framestep:
+                        self.ztr = -self.gait_height + self.step_height * 3 / 4
+                    else:
+                        self.ztr = -self.gait_height + self.step_height
+                    if iii == 0 or iii == self.framestep or iii == 2 * self.framestep:
+                        self.xtr += dx0
+                        self.ytr = -64 + dy0 * iii
+                    elif iii == self.fr2 - self.framestep or iii == self.fr2 - 2 * self.framestep or iii == self.fr2 - 3 * self.framestep:
+                        self.xtr += dx0
+                        self.ytr = -64 + dy0 * 3 * self.framestep - dy * (self.fr2 - 3 * self.framestep) / 2 + dy0 * (
+                                iii - (self.fr2 - 3 * self.framestep))
+                    else:
+                        self.xtr += dx
+                        self.ytr = - 64 + dy0 * 3 * self.framestep - dy * iii / 2
+                        self.wr = self.wr_old + (self.wr_target - self.wr_old) * (iii) / (self.fr2 - self.hovernum * self.framestep)
+                        self.wl = self.wl_old + (self.wl_target - self.wl_old) * (iii) / (self.fr2 - self.hovernum * self.framestep)
+
+                    self.xtl += dx0
+                    self.ytl = -S + self.d10 + dy0 * iii
+                else:
+                    if self.walk_cycle_step == self.walk_cycle_steps_each_leg:
+                        self.xr, self.xl = self.params['BODY_TILT_AT_WALK'], self.params['BODY_TILT_AT_WALK']  #
+
+                        xt0, dy0, dy = self.step_length_planer(self.second_step_length, self.side_length, self.framestep, self.hovernum)
+                        xtr1 = self.xtr
+                        self.ztr = -self.gait_height
+                        if self.cycle == self.number_of_cycles - 1:
+                            xtr2 = 0
+                        else:
+                            xtr2 = -xt0
+                        dx0 = (xtr2 - xtr1) * self.framestep / self.fr2
+                        dx = - dx0 * (self.fr2 + self.hovernum * self.framestep) / (self.fr2 - self.hovernum * self.framestep)
+                    iii = (self.walk_cycle_step - self.walk_cycle_steps_each_leg) * self.framestep
+                    if 2 * self.framestep < iii < self.fr2 - 4 * self.framestep:
+                        xt0, dy0, dy = self.step_length_planer(self.second_step_length, self.side_length, self.framestep, self.hovernum)
+                        if self.cycle == self.number_of_cycles - 1:
+                            xtr2 = 0
+                        else:
+                            xtr2 = -xt0
+                        dx0 = (xtr2 - self.xtr) * self.framestep / (self.fr2 - iii)
+                        dx = (- self.xtr - self.xtl - dx0 * ((self.fr2 - iii) / self.framestep + 3)) / (
+                                (self.fr2 - iii) / self.framestep - 3)
+                    S = -self.amplitude / 2 * math.sin(self.alpha01 * iii)
+                    self.ytr = -S - self.d10
+                    self.ytl = -S + self.d10
+                    self.ztl = -self.gait_height
+                    if iii == 0:
+                        self.ztl = -self.gait_height + self.step_height / 3
+                    elif iii == self.framestep:
+                        self.ztl = -self.gait_height + self.step_height * 2 / 3
+                    elif iii == self.fr2 - self.framestep:
+                        self.ztl = -self.gait_height + self.step_height / 4
+                    elif iii == self.fr2 - 2 * self.framestep:
+                        self.ztl = -self.gait_height + self.step_height * 2 / 4
+                    elif iii == self.fr2 - 3 * self.framestep:
+                        self.ztl = -self.gait_height + self.step_height * 3 / 4
+                    else:
+                        self.ztl = -self.gait_height + self.step_height
+                    if self.cycle == self.number_of_cycles - 1:
+                        if iii == (self.fr2 - self.framestep):
+                            self.ztl = -self.gait_height
+                            self.ytl = S + self.d10
+                    if iii == 0 or iii == self.framestep or iii == 2 * self.framestep:
+                        self.xtl += dx0
+                        self.ytl = S + self.d10 + dy0 * iii
+                    elif iii == self.fr2 - self.framestep or iii == self.fr2 - 2 * self.framestep or iii == self.fr2 - 3 * self.framestep:
+                        self.xtl += dx0
+                        self.ytl = S + 64 + dy0 * 3 * self.framestep - dy * (self.fr2 - self.hovernum * self.framestep) + dy0 * (
+                                iii - (self.fr2 - 3 * self.framestep))
+                    else:
+                        self.xtl += dx
+                        self.ytl = S + 64 + dy0 * 3 * self.framestep - dy * (iii - 3 * self.framestep)
+                        self.wr = self.wr_target * (1 - iii / (self.fr2 - self.hovernum * self.framestep) * 2)
+                        self.wl = self.wl_target * (1 - iii / (self.fr2 - self.hovernum * self.framestep) * 2)
+                    self.xtr += dx0
+                    self.ytr += dy0
+                    if self.ytl < 54:
+                        self.ytl = 54
+                self.feet_action()
+            self.xr, self.xl, self.yr, self.yl = self.xr_old, self.xl_old, self.yr_old, self.yl_old
+        self.general_step += 1
+        return True
 
 
 if __name__ == "__main__":

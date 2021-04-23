@@ -26,7 +26,8 @@ class Player(object):
 
         self.motion.sim_backend.start()
 
-        self.motion.acting()
+        while self.motion.act():
+            pass
 
         self.motion.sim_backend.stop()
         self.motion.sim_backend.disable()
