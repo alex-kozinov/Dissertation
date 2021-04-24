@@ -1,60 +1,184 @@
 #  Walking engine for Starkit Kondo OpenMV
 #  Copyright STARKIT Soccer team of MIPT
 
-import sys, os
-import math, time, json
-
-current_work_directory = os.getcwd()
-current_work_directory = current_work_directory.replace('\\', '/')
-current_work_directory += '/'
-
-with open("simulator_lib_directory.txt", "r") as f:
-    simulator_lib_directory = f.read()
-simulator_lib_directory = simulator_lib_directory.replace('\\', '/')
-sys.path.append(simulator_lib_directory)
+import sys
+import math, time
 
 
-sys.path.append(current_work_directory + 'Soccer/')
-sys.path.append(current_work_directory + 'Soccer/Motion/')
+class Alpha(object):
+    def compute_alpha_v3(self, xt,yt,zt,x,y,z,w, sizes, limAlpha):
+        from math import sqrt,cos,sin,asin,fabs,tan,atan
+        #t1_start =time.perf_counter_ns()
+        a5, b5, c5, a6, a7, a8, a9, a10, b10, c10 = sizes
+        limAlpha5, limAlpha6, limAlpha7, limAlpha8, limAlpha9, limAlpha10 = limAlpha
+        alpha5 = w
+        cos5 = math.cos(alpha5)
+        sin5 = math.sin(alpha5)
+        nor = math.sqrt(x*x+y*y+z*z)
+        x = x/nor
+        y = y/nor
+        z = z/nor
+        xtp = xt * cos5 + (yt + a5) * sin5
+        ytp = (yt + a5) * cos5 - xt * sin5
+        ztp = zt
+        xp =  x * cos5 + y * sin5
+        yp = y * cos5 - x * sin5
+        zp = z
+        var = [-1,1]
+        angles = []
+        lim1a= limAlpha6[0]*0.00058909
+        lim2a = limAlpha6[1]*0.00058909
+        ind = 1
+        step1 = (lim2a-lim1a)/10
+        testalpha6 =[]
+        for i in range (11):
+            alpha6 = lim1a+i*step1
+            cos= math.cos(alpha6)
+            sin= math.sin(alpha6)
+            testalpha6.append( ((ytp+b5)*cos+ztp*sin -c10)*((yp*cos+zp*sin)**2-
+                (zp*cos-yp*sin)**2 -xp*xp)-a10-b10*(yp*cos+zp*sin)/math.sqrt((zp*cos-yp*sin)**2+xp*xp))
 
-import sim
-from compute_Alpha_v3 import Alpha
+        points = []
+        for i in range(10):
+            if (testalpha6[i]>0 and testalpha6[i+1]<0)or(testalpha6[i]<0 and testalpha6[i+1]>0): points.append(i)
+        k=0
+        if len(points)==0:
+            for i in range(11):
+                if (math.fabs(testalpha6[i]) < math.fabs(testalpha6[k])): k=i
+            if k==10: points.append(9)
+            else:
+                if (math.fabs(testalpha6[k-1]) < math.fabs(testalpha6[k+1])): points.append(k-1)
+                else: points.append(k)
+        alpha6m = []
+        for j in range(len(points)):
+            lim1=lim1a+points[j]*step1
+            lim2=lim1+step1
+            while (True):
+                step = (lim2-lim1)/10
+                testalpha6 =[]
+                for i in range (11):
+                    alpha6 = lim1+i*step
+                    cos= math.cos(alpha6)
+                    sin= math.sin(alpha6)
+                    testalpha6.append( ((ytp+b5)*cos+ztp*sin-c10)*((yp*cos+zp*sin)**2-
+                        (zp*cos-yp*sin)**2 -xp*xp)-a10-b10*(yp*cos+zp*sin)/math.sqrt((zp*cos-yp*sin)**2+xp*xp))
+                k=0
+                for i in range(11):
+                    if (math.fabs(testalpha6[i]) < math.fabs(testalpha6[k])): k = i
+                if k==0: k2=1
+                elif k==10: k2 = 9
+                else:
+                    if (math.fabs(testalpha6[k-1]) < math.fabs(testalpha6[k+1])): k2=k-1
+                    else: k2=k+1
+                alpha6 = lim1+k*step
+                if k>k2:
+                    lim1 = lim1+k2*step
+                    lim2 = lim1+ step
+                else:
+                    lim1 = lim1+k*step
+                    lim2 = lim1+ step
+                if (lim2-lim1 < 0.00025): break
+                ind = ind + 1
+                if ind> (limAlpha6[1]- limAlpha6[0]): break
+            alpha6m.append(alpha6)
+        alpha10m =[]
+        kk=0
+
+        for i in range (len(alpha6m)):
+            tan6 = math.tan(alpha6m[i-kk])
+            alpha10 = math.atan((-yp-zp*tan6)/math.sqrt((zp-yp*tan6)**2+xp*xp*(1+tan6*tan6)))
+            if limAlpha10[0] < alpha10*1698 and alpha10*1698<limAlpha10[1]: alpha10m.append(alpha10)
+            else:
+                alpha6m.pop(i-kk)
+                kk=kk+1
+        kk=0
+
+        for ii in range (len(alpha6m)):
+            cos6 = math.cos(alpha6m[ii-kk])
+            sin6 = math.sin(alpha6m[ii-kk])
+            alpha987 = math.atan(-xp/(zp*cos6- yp*sin6))
+            sin987 = math.sin(alpha987)
+            cos987 = math.cos(alpha987)
+            K1 = a6*sin987+xtp*cos987+(ztp*cos6-(ytp+b5)*sin6)*sin987
+            K2 = a9+a6*cos987+(ztp*cos6-(ytp+b5)*sin6)*cos987-xtp*sin987+b10/math.cos(alpha10m[ii-kk])+((ytp+b5)*cos6+ztp*sin6-c10)*math.tan(alpha10m[ii-kk])
+            m = (K1*K1+K2*K2+a8*a8-a7*a7)/(2*a8)
 
 
-class Glob:
-    def __init__(self, current_work_directory):
-        self.current_work_directory = current_work_directory
-        with open(current_work_directory + "Soccer/Init_params/Sim/Sim_params.json", "r") as f:
-            self.params = json.loads(f.read())
+            temp1 = K1*K1*m*m-(K1*K1+K2*K2)*(m*m-K2*K2)
+            if temp1>=0 :
+                temp2 = (-K1*m + math.sqrt(temp1))/(K1*K1+K2*K2)
+                temp3 = (-K1*m - math.sqrt(temp1))/(K1*K1+K2*K2)
+                if math.fabs(temp2) <= 1 and math.fabs(temp3) <= 1:
+                    alpha91 = math.asin(temp2)
+                    alpha92 = math.asin(temp3)
+                else:
+                    alpha6m.pop(ii-kk)
+                    alpha10m.pop(ii-kk)
+                    kk=kk+1
+                    continue
+            else:
+                alpha6m.pop(ii-kk)
+                alpha10m.pop(ii-kk)
+                kk=kk+1
+                continue
+            alpha81 = math.atan((K1+a8*math.sin(alpha91))/(K2+a8*math.cos(alpha91))) - alpha91
+            alpha82 = math.atan((K1+a8*math.sin(alpha92))/(K2+a8*math.cos(alpha92))) - alpha92
+            alpha71 = alpha91+alpha81- alpha987
+            alpha72 = alpha92+alpha82- alpha987
+            temp71 = alpha71*1698<limAlpha7[0] or alpha71*1698>limAlpha7[1]
+            temp72 = alpha72*1698<limAlpha7[0] or alpha72*1698>limAlpha7[1]
+            temp81 = alpha81*1698<limAlpha8[0] or alpha81*1698>limAlpha8[1]
+            temp82 = alpha82*1698<limAlpha8[0] or alpha82*1698>limAlpha8[1]
+            temp91 = alpha91*1698<limAlpha9[0] or alpha91*1698>limAlpha9[1]
+            temp92 = alpha92*1698<limAlpha9[0] or alpha92*1698>limAlpha9[1]
+            if (temp71 and temp72) or (temp81 and temp82) or (temp91 and temp92) or ((temp71 or temp81 or temp91) and (temp72 or temp82 or temp92)):
+                alpha6m.pop(ii-kk)
+                alpha10m.pop(ii-kk)
+                kk=kk+1
+                continue
+            else:
+                if not (temp71 or temp81 or temp91):
+                    ang =()
+                    ang =alpha10m[ii-kk],alpha91,alpha81,alpha71,alpha6m[ii-kk],alpha5
+                    angles.append(ang)
+                if not (temp72 or temp82 or temp92):
+                    ang =()
+                    ang =alpha10m[ii-kk],alpha92,alpha82,alpha72,alpha6m[ii-kk],alpha5
+                    angles.append(ang)
+        return angles
 
 
 class SimBackend(object):
-    def __init__(self, joint_names, imu_name):
+    def __init__(self, joint_names, imu_name, sim_path):
+        sys.path.append(sim_path)
+        import sim
+        self.sim_lib = sim
         self.joint_names = joint_names
         self.imu_name = imu_name
         self.joint_handles = []
         self.client_id = -1
         self.sim_step_counter = 0
         self.imu_handle = None
+        self.is_first_imu_call = True
 
     def start(self):
-        sim.simxFinish(-1)  # just in case, close all opened connections
+        self.sim_lib.simxFinish(-1)  # just in case, close all opened connections
         sim_thread_cycle_in_ms = 5
-        self.client_id = sim.simxStart('127.0.0.1', -19997, True, True, 5000, sim_thread_cycle_in_ms)
+        self.client_id = self.sim_lib.simxStart('127.0.0.1', -19997, True, True, 5000, sim_thread_cycle_in_ms)
 
-        _, self.imu_handle = sim.simxGetObjectHandle(self.client_id, self.imu_name, sim.simx_opmode_blocking)
+        _, self.imu_handle = self.sim_lib.simxGetObjectHandle(self.client_id, self.imu_name, self.sim_lib.simx_opmode_blocking)
         for i, join_name in enumerate(self.joint_names):
-            _, handle = sim.simxGetObjectHandle(self.client_id, join_name, sim.simx_opmode_blocking)
+            _, handle = self.sim_lib.simxGetObjectHandle(self.client_id, join_name, self.sim_lib.simx_opmode_blocking)
             self.joint_handles.append(handle)
 
-        sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_streaming)
+        self.sim_lib.simxGetIntegerParameter(self.client_id, self.sim_lib.sim_intparam_program_version, self.sim_lib.simx_opmode_streaming)
         time.sleep(0.1)
-        sim.simxStartSimulation(self.client_id, sim.simx_opmode_oneshot)
+        self.sim_lib.simxStartSimulation(self.client_id, self.sim_lib.simx_opmode_oneshot)
 
     def wait_step(self):
         while True:
-            sim.simxGetIntegerParameter(self.client_id, sim.sim_intparam_program_version, sim.simx_opmode_buffer)
-            tim = sim.simxGetLastCmdTime(self.client_id)
+            self.sim_lib.simxGetIntegerParameter(self.client_id, self.sim_lib.sim_intparam_program_version, self.sim_lib.simx_opmode_buffer)
+            tim = self.sim_lib.simxGetLastCmdTime(self.client_id)
 
             if tim > self.sim_step_counter:
                 self.sim_step_counter = tim
@@ -62,39 +186,66 @@ class SimBackend(object):
             time.sleep(0.001)
 
     def stop(self):
-        sim.simxStopSimulation(self.client_id, sim.simx_opmode_oneshot)
+        self.sim_lib.simxStopSimulation(self.client_id, self.sim_lib.simx_opmode_oneshot)
 
     def disable(self):
         time.sleep(0.2)
-        sim.simxFinish(self.client_id)
+        self.sim_lib.simxFinish(self.client_id)
 
     def set_joint_positions(self, positions):
-        sim.simxPauseCommunication(self.client_id, True)
+        self.sim_lib.simxPauseCommunication(self.client_id, True)
         for position, joint_handle in zip(positions, self.joint_handles):
-            sim.simxSetJointTargetPosition(
+            self.sim_lib.simxSetJointTargetPosition(
                 self.client_id,
                 joint_handle,
                 position,
-                sim.simx_opmode_oneshot
+                self.sim_lib.simx_opmode_oneshot
             )
-        sim.simxPauseCommunication(self.client_id, False)
+        self.sim_lib.simxPauseCommunication(self.client_id, False)
 
     def get_joint_positions(self):
         positions = []
         for i, joint_handle in enumerate(self.joint_handles):
-            _, position = sim.simxGetJointPosition(self.client_id, joint_handle, sim.simx_opmode_blocking)
+            _, position = self.sim_lib.simxGetJointPosition(self.client_id, joint_handle, self.sim_lib.simx_opmode_blocking)
             positions.append(position)
 
         return positions
 
     def get_imu_quaternion(self):
-        _, dummy_h_quaternion = sim.simxGetObjectQuaternion(self.client_id, self.imu_handle, -1, sim.simx_opmode_buffer)
+        # if self.is_first_imu_call:
+        #     self.is_first_imu_call = False
+        #     self.get_imu_quaternion()
+        #     self.get_imu_quaternion()
+        _, dummy_h_quaternion = self.sim_lib.simxGetObjectQuaternion(self.client_id, self.imu_handle, -1, self.sim_lib.simx_opmode_streaming)
         return dummy_h_quaternion
 
 
-class Environment(object):
-    def __init__(self):
-        self.client_id = -1
+class DirectEnvironment(object):
+    def __init__(self, joint_names, imu_name, sim_path):
+        self.sim_backend = SimBackend(joint_names, imu_name, sim_path)
+        self.joint_positions = None
+
+    def __del__(self):
+        self.sim_backend.stop()
+        self.sim_backend.disable()
+
+    def reset(self):
+        self.sim_backend.start()
+        self.joint_positions = self.sim_backend.get_joint_positions()
+        return (self.joint_positions, self.sim_backend.get_imu_quaternion())
+
+    def step(self, action):
+        self.sim_backend.wait_step()
+        if action:
+            self.joint_positions = action
+        self.sim_backend.set_joint_positions(self.joint_positions)
+        return (self.joint_positions, self.sim_backend.get_imu_quaternion()), 0
+
+
+
+class PyRepEnvironment(object):
+    def __init__(self, joint_names, imu_name):
+        pass
 
     def __del__(self):
         pass
@@ -105,20 +256,8 @@ class Environment(object):
     def step(self, action):
         pass
 
-    def sim_start_(self):
-        pass
-
-
-class BaseAgent(object):
-    def __init__(self):
-        pass
-
-    def act(self, state):
-        pass
-
-
 class MotionSim(object):
-    def __init__(self, glob):
+    def __init__(self, active_joints):
         self.FRAMELENGTH = 0.02
         self.trims = []
         self.joint_handle = []
@@ -126,7 +265,27 @@ class MotionSim(object):
 
         self.client_id = -1
         self.sim_step_counter = 0
-        self.params = glob.params
+        self.params = {
+            "BODY_TILT_AT_WALK": 0.03,
+            "SOLE_LANDING_SKEW": 0.06,
+            "SIDE_STEP_RIGHT_YIELD": 20.5,
+            "SIDE_STEP_LEFT_YIELD": 20.5,
+            "FIRST_STEP_YIELD": 55,
+            "CYCLE_STEP_YIELD": 87.3,
+            "FIELD_WIDTH": 2.6,
+            "FIELD_LENGTH": 3.6,
+            "DIAMETER_OF_BALL": 80,
+            "APERTURE_PER_PIXEL": 0.18925,
+            "APERTURE_PER_PIXEL_VERTICAL": 0.21,
+            "KICK_ADJUSTMENT_DISTANCE": 80,
+            "KICK_OFFSET_OF_BALL": 60,
+            "HEIGHT_OF_CAMERA": 413,
+            "HEIGHT_OF_NECK": 36.76,
+            "POST_WIDTH_IN_MM": 50,
+            "FRAME_DELAY": 3,
+            "FRAMES_PER_CYCLE": 2,
+            "DRIBBLING": 0
+        }
 
         self.FACTOR = [1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1]
 
@@ -189,11 +348,13 @@ class MotionSim(object):
                              'Leg_left_8',
                              'Leg_left_7', 'Leg_left_6', 'Leg_left_5', 'hand_left_4', 'hand_left_3', 'hand_left_2',
                              'hand_left_1', 'head0', 'head12']
+        for used_join_name, join_name in zip(self.ACTIVEJOINTS, active_joints):
+            assert used_join_name == join_name
         self.cycle = 0
         self.number_of_cycles = 25
         self.general_step = 0
         self.total_steps = self.fr2 + self.number_of_cycles
-        self.sim_backend = SimBackend(self.ACTIVEJOINTS, "Dummy_H")
+        # self.sim_backend = SimBackend(self.ACTIVEJOINTS, "Dummy_H")
         self.framestep = self.sim_thread_cycle_in_ms // 10
         self.walk_cycle_steps_each_leg = self.fr2 // self.framestep
         self.total_walk_cycle_steps = 2 * self.walk_cycle_steps_each_leg
@@ -254,7 +415,6 @@ class MotionSim(object):
         angles_l = self.alpha.compute_alpha_v3(self.xtl, -self.ytl, self.ztl, self.xl, -self.yl, self.zl, self.wl, self.SIZES, self.LIM_ALPHA)
 
         if not len(angles_r) or not len(angles_l):
-            print("AAAAAAAA")
             return []
 
         for i in range(len(angles_r)):
@@ -309,27 +469,24 @@ class MotionSim(object):
         dy = regular_side_length / (self.fr2 - hovernum1 * framestep) * framestep
         return xt0, dy0, dy
 
-    def feet_action(self):
+    def get_feet_action(self):
         angles = self.compute_alpha_for_walk()
+        new_positions = []
         if not len(angles):
             self.exit_flag = self.exit_flag + 1
-            return False
         else:
-            self.sim_backend.wait_step()
-            new_positions = []
-
             for i in range(len(angles)):
                 new_positions.append(angles[i] * self.FACTOR[i])
-            self.sim_backend.set_joint_positions(new_positions)
-            return True
+        return new_positions
 
     def refresh_orientation(self):
-        dummy_h_quaternion = self.sim_backend.get_imu_quaternion()
+        dummy_h_quaternion = self.imu_quaternion
         self.euler_angle = self.quaternion_to_euler_angle(dummy_h_quaternion)
 
-    def act(self):
+    def act(self, imu_quaternion):
+        self.imu_quaternion = imu_quaternion
         if self.general_step >= self.total_steps:
-            return False
+            return None
 
         if not self.general_step:
             self.refresh_orientation()
@@ -341,7 +498,9 @@ class MotionSim(object):
             self.ztl = -223.1 + i * (223.1-self.gait_height) / self.fr2
             self.ytr = -self.d10 - i * amplitude / 2 / self.fr2
             self.ytl = self.d10 - i * amplitude / 2 / self.fr2
-            self.feet_action()
+
+            new_positions = self.get_feet_action()
+
             self.general_step += 1
         else:
             if self.walk_cycle_step == 0:
@@ -484,14 +643,34 @@ class MotionSim(object):
                 self.ytr += self.dy0
                 if self.ytl < 54:
                     self.ytl = 54
-            self.feet_action()
+
+            new_positions = self.get_feet_action()
+
             self.walk_cycle_step += 1
             if self.walk_cycle_step == self.total_walk_cycle_steps:
                 self.xr, self.xl, self.yr, self.yl = self.xr_old, self.xl_old, self.yr_old, self.yl_old
                 self.general_step += 1
                 self.walk_cycle_step = 0
-        return True
 
+        return new_positions
+
+
+class BaseAgent(object):
+    def __init__(self, active_joints):
+        self.motion = MotionSim(active_joints)
+        self.prev_positions = None
+
+    def act(self, state):
+        positions, imu = state
+        if self.prev_positions is None:
+            self.prev_positions = positions
+
+        new_positions = self.motion.act(imu)
+        if new_positions is not None and len(new_positions):
+            self.prev_positions = new_positions
+
+        # return self.prev_positions
+        return new_positions
 
 if __name__ == "__main__":
     print('This is not main module!')
