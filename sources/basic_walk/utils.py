@@ -257,7 +257,8 @@ class PyRepEnvironment(object):
         pass
 
 class MotionSim(object):
-    def __init__(self, active_joints):
+#     def __init__(self, active_joints):
+    def __init__(self):
         self.FRAMELENGTH = 0.02
         self.trims = []
         self.joint_handle = []
@@ -348,8 +349,8 @@ class MotionSim(object):
                              'Leg_left_8',
                              'Leg_left_7', 'Leg_left_6', 'Leg_left_5', 'hand_left_4', 'hand_left_3', 'hand_left_2',
                              'hand_left_1', 'head0', 'head12']
-        for used_join_name, join_name in zip(self.ACTIVEJOINTS, active_joints):
-            assert used_join_name == join_name
+#         for used_join_name, join_name in zip(self.ACTIVEJOINTS, active_joints):
+#             assert used_join_name == join_name
         self.cycle = 0
         self.number_of_cycles = 25
         self.general_step = 0
@@ -656,12 +657,13 @@ class MotionSim(object):
 
 
 class BaseAgent(object):
-    def __init__(self, active_joints):
-        self.motion = MotionSim(active_joints)
+    def __init__(self):
+        self.motion = MotionSim()
         self.prev_positions = None
 
     def act(self, state):
-        positions, imu = state
+        positions = state[:-4]
+        imu = state[-4:]
         if self.prev_positions is None:
             self.prev_positions = positions
 
@@ -669,8 +671,8 @@ class BaseAgent(object):
         if new_positions is not None and len(new_positions):
             self.prev_positions = new_positions
 
-        # return self.prev_positions
-        return new_positions
+        return self.prev_positions
+#         return new_positions
 
 if __name__ == "__main__":
     print('This is not main module!')
