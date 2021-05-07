@@ -1,8 +1,11 @@
 #  Walking engine for Starkit Kondo OpenMV
 #  Copyright STARKIT Soccer team of MIPT
 
+import math
 import sys
-import math, time
+import time
+
+import numpy as np
 
 
 class Alpha(object):
@@ -242,23 +245,8 @@ class DirectEnvironment(object):
         return (self.joint_positions, self.sim_backend.get_imu_quaternion()), 0
 
 
-
-class PyRepEnvironment(object):
-    def __init__(self, joint_names, imu_name):
-        pass
-
-    def __del__(self):
-        pass
-
-    def reset(self):
-        pass
-
-    def step(self, action):
-        pass
-
 class MotionSim(object):
-#     def __init__(self, active_joints):
-    def __init__(self):
+    def __init__(self, random_mode=False, foot_only_mode=False):
         self.FRAMELENGTH = 0.02
         self.trims = []
         self.joint_handle = []
@@ -266,28 +254,33 @@ class MotionSim(object):
 
         self.client_id = -1
         self.sim_step_counter = 0
-        self.params = {
-            "BODY_TILT_AT_WALK": 0.03,
-            "SOLE_LANDING_SKEW": 0.06,
-            "SIDE_STEP_RIGHT_YIELD": 20.5,
-            "SIDE_STEP_LEFT_YIELD": 20.5,
-            "FIRST_STEP_YIELD": 55,
-            "CYCLE_STEP_YIELD": 87.3,
-            "FIELD_WIDTH": 2.6,
-            "FIELD_LENGTH": 3.6,
-            "DIAMETER_OF_BALL": 80,
-            "APERTURE_PER_PIXEL": 0.18925,
-            "APERTURE_PER_PIXEL_VERTICAL": 0.21,
-            "KICK_ADJUSTMENT_DISTANCE": 80,
-            "KICK_OFFSET_OF_BALL": 60,
-            "HEIGHT_OF_CAMERA": 413,
-            "HEIGHT_OF_NECK": 36.76,
-            "POST_WIDTH_IN_MM": 50,
-            "FRAME_DELAY": 3,
-            "FRAMES_PER_CYCLE": 2,
-            "DRIBBLING": 0
-        }
-
+        self._foot_only_mode = foot_only_mode
+        if random_mode:
+            self.params = {
+                "BODY_TILT_AT_WALK": np.random.uniform(low=0.001, high=0.1),
+                "SOLE_LANDING_SKEW": np.random.uniform(low=0.035, high=0.085),
+                "FIRST_LEG_IS_RIGHT": np.random.choice([True, False]),
+                # "BASE_STEP_LENGTH": np.random.uniform(low=20., high=120),
+                # "BASE_SIDE_LENGTH": np.random.uniform(low=0., high=40),
+                "BASE_STEP_LENGTH": np.random.uniform(low=40., high=100),
+                "BASE_SIDE_LENGTH": np.random.uniform(low=0., high=20),
+                "AMPLITUDE": np.random.uniform(low=5., high=35),
+                "FR2": np.random.randint(low=18, high=24),
+                "GAIT_HEIGHT": np.random.uniform(low=180., high=200),
+                "STEP_HEIGHT": np.random.uniform(low=23., high=45),
+            }
+        else:
+            self.params = {
+                "BODY_TILT_AT_WALK": 0.03,
+                "SOLE_LANDING_SKEW": 0.06,
+                "FIRST_LEG_IS_RIGHT": False,
+                "BASE_STEP_LENGTH": 90,
+                "BASE_SIDE_LENGTH": 0,
+                "AMPLITUDE": 20,
+                "FR2": 24,
+                "GAIT_HEIGHT": 190,
+                "STEP_HEIGHT": 32.0,
+            }
         self.FACTOR = [1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1]
 
         a5 = 21.5  # мм расстояние от оси симметрии до оси сервы 5
@@ -316,28 +309,26 @@ class MotionSim(object):
         self.slow_time = 0.0  # seconds
         self.sim_thread_cycle_in_ms = 20
         self.rotation = 0  # -45 - +45 degrees Centigrade per step + CW, - CCW.
-        self.first_leg_is_right = True
-        self.base_step_length = 90
-        self.base_side_length = 0
-        # Following paramenetrs Not recommended for change
-        self.amplitude = 20  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
-        self.fr1 = 0  # frame number for 1-st phase of gait ( two legs on floor)
-        self.fr2 = 24  # frame number for 2-nd phase of gait ( one leg in air)
-        self.gait_height = 190  # Distance between Center of mass and floor in walk pose
-        self.step_height = 32.0  # elevation of sole over floor
+        # self.params["BASE_STEP_LENGTH"] = 90
+        # self.params["BASE_SIDE_LENGTH"] = 0
+        # # Following paramenetrs Not recommended for change
+        # self.params["AMPLITUDE"] = 20  # mm side amplitude (maximum distance between most right and most left position of Center of Mass) 53.4*2
+        # self.params["FR2"] = 24  # frame number for 2-nd phase of gait ( one leg in air)
+        # self.params["GAIT_HEIGHT"] = 190  # Distance between Center of mass and floor in walk pose
+        # self.params["STEP_HEIGHT"] = 32.0  # elevation of sole over floor
         self.alpha = Alpha()
         self.exit_flag = 0
         self.neck_pan = 0
         self.xtr = 0
         self.ytr = -self.d10  # -53.4
-        self.ztr = -self.gait_height
+        self.ztr = -self.params["GAIT_HEIGHT"]
         self.xr = 0
         self.yr = 0
         self.zr = -1
         self.wr = 0
         self.xtl = 0
         self.ytl = self.d10  # 53.4
-        self.ztl = -self.gait_height
+        self.ztl = -self.params["GAIT_HEIGHT"]
         self.xl = 0
         self.yl = 0
         self.zl = -1
@@ -348,16 +339,13 @@ class MotionSim(object):
                              'hand_right_3', 'hand_right_2', 'hand_right_1', 'Tors1', 'Leg_left_10', 'Leg_left_9',
                              'Leg_left_8',
                              'Leg_left_7', 'Leg_left_6', 'Leg_left_5', 'hand_left_4', 'hand_left_3', 'hand_left_2',
-                             'hand_left_1', 'head0', 'head12']
-#         for used_join_name, join_name in zip(self.ACTIVEJOINTS, active_joints):
-#             assert used_join_name == join_name
+                             'hand_left_1']
         self.cycle = 0
-        self.number_of_cycles = 25
+        self.number_of_cycles = 50
         self.general_step = 0
-        self.total_steps = self.fr2 + self.number_of_cycles
-        # self.sim_backend = SimBackend(self.ACTIVEJOINTS, "Dummy_H")
+        self.total_steps = self.params["FR2"] + self.number_of_cycles
         self.framestep = self.sim_thread_cycle_in_ms // 10
-        self.walk_cycle_steps_each_leg = self.fr2 // self.framestep
+        self.walk_cycle_steps_each_leg = self.params["FR2"] // self.framestep
         self.total_walk_cycle_steps = 2 * self.walk_cycle_steps_each_leg
         self.walk_cycle_step = 0
 
@@ -434,7 +422,7 @@ class MotionSim(object):
             else:
                 angles_l.pop(0)
 
-        if self.first_leg_is_right:
+        if self.params["FIRST_LEG_IS_RIGHT"]:
             angles_l, angles_r = angles_r, angles_l
 
         for j in range(6):
@@ -465,9 +453,9 @@ class MotionSim(object):
         return angles
 
     def step_length_planer(self, regular_step_length, regular_side_length, framestep, hovernum1):
-        xt0 = regular_step_length / 2 * self.fr2 / (self.fr2 + framestep * hovernum1)
-        dy0 = regular_side_length / (self.fr2 + hovernum1 * framestep) * framestep
-        dy = regular_side_length / (self.fr2 - hovernum1 * framestep) * framestep
+        xt0 = regular_step_length / 2 * self.params["FR2"] / (self.params["FR2"] + framestep * hovernum1)
+        dy0 = regular_side_length / (self.params["FR2"] + hovernum1 * framestep) * framestep
+        dy = regular_side_length / (self.params["FR2"] - hovernum1 * framestep) * framestep
         return xt0, dy0, dy
 
     def get_feet_action(self):
@@ -478,7 +466,15 @@ class MotionSim(object):
         else:
             for i in range(len(angles)):
                 new_positions.append(angles[i] * self.FACTOR[i])
-        return new_positions
+
+        result_positions = []
+        if self._foot_only_mode and len(new_positions):
+            for i, joint_name in enumerate(self.ACTIVEJOINTS):
+                if joint_name == "Tors1" or "Leg" in joint_name:
+                    result_positions.append(new_positions[i])
+        else:
+            result_positions = new_positions
+        return result_positions
 
     def refresh_orientation(self):
         dummy_h_quaternion = self.imu_quaternion
@@ -492,30 +488,30 @@ class MotionSim(object):
         if not self.general_step:
             self.refresh_orientation()
 
-        if self.general_step < self.fr2:
+        if self.general_step < self.params["FR2"]:
             i = self.general_step
             amplitude = 70
-            self.ztr = -223.1 + i * (223.1-self.gait_height) / self.fr2
-            self.ztl = -223.1 + i * (223.1-self.gait_height) / self.fr2
-            self.ytr = -self.d10 - i * amplitude / 2 / self.fr2
-            self.ytl = self.d10 - i * amplitude / 2 / self.fr2
+            self.ztr = -223.1 + i * (223.1-self.params["GAIT_HEIGHT"]) / self.params["FR2"]
+            self.ztl = -223.1 + i * (223.1-self.params["GAIT_HEIGHT"]) / self.params["FR2"]
+            self.ytr = -self.d10 - i * amplitude / 2 / self.params["FR2"]
+            self.ytl = self.d10 - i * amplitude / 2 / self.params["FR2"]
 
             new_positions = self.get_feet_action()
 
             self.general_step += 1
         else:
             if self.walk_cycle_step == 0:
-                self.cycle = self.general_step - self.fr2
+                self.cycle = self.general_step - self.params["FR2"]
                 self.refresh_orientation()
                 self.rotation = self.imu_body_yaw() * 1.2
-                if self.first_leg_is_right:
+                if self.params["FIRST_LEG_IS_RIGHT"]:
                     self.rotation *= -1
                 self.rotation = self.normalize_rotation(self.rotation)
 
                 self.rotation = math.degrees(self.rotation)
-                self.side_length = self.base_side_length
-                self.step_length = self.base_step_length
-                self.second_step_length = self.base_step_length
+                self.side_length = self.params["BASE_SIDE_LENGTH"]
+                self.step_length = self.params["BASE_STEP_LENGTH"]
+                self.second_step_length = self.params["BASE_STEP_LENGTH"]
                 if self.cycle == 0:
                     self.step_length = self.step_length / 3
                     self.second_step_length = self.step_length / 3
@@ -524,7 +520,7 @@ class MotionSim(object):
                     self.second_step_length = self.step_length / 3 * 2
 
                 self.rotation = -self.rotation / 286
-                self.alpha01 = math.pi / self.fr2
+                self.alpha01 = math.pi / self.params["FR2"]
                 self.hovernum = 6  # number of steps hovering over take off + landing points
                 self.xr_old, self.xl_old, self.yr_old, self.yl_old = self.xr, self.xl, self.yr, self.yl
                 # correction of sole skew depending on side angle of body when step pushes land
@@ -537,51 +533,51 @@ class MotionSim(object):
                 self.wl_target = - self.rotation
                 self.xt0, self.dy0, self.dy = self.step_length_planer(self.step_length, self.side_length, self.framestep,
                                                        self.hovernum)
-                self.ztl = -self.gait_height
+                self.ztl = -self.params["GAIT_HEIGHT"]
                 xtl0 = self.xtl
                 xtr0 = self.xtr
                 self.xtl1 = -self.xt0
                 self.xtr1 = self.xt0
-                self.dx0 = (self.xtl1 - xtl0) * self.framestep / self.fr2
-                self.dx = (self.xtr1 - xtr0) * self.framestep / self.fr2 * (self.fr2 + self.hovernum * self.framestep) / (
-                    self.fr2 - self.hovernum * self.framestep)
+                self.dx0 = (self.xtl1 - xtl0) * self.framestep / self.params["FR2"]
+                self.dx = (self.xtr1 - xtr0) * self.framestep / self.params["FR2"] * (self.params["FR2"] + self.hovernum * self.framestep) / (
+                    self.params["FR2"] - self.hovernum * self.framestep)
             if self.walk_cycle_step < self.walk_cycle_steps_each_leg:
                 iii = self.walk_cycle_step * self.framestep
-                if 2 * self.framestep < iii < self.fr2 - 4 * self.framestep:
+                if 2 * self.framestep < iii < self.params["FR2"] - 4 * self.framestep:
                     self.xt0, self.dy0, self.dy = self.step_length_planer(self.step_length, self.side_length, self.framestep, self.hovernum)
 
                     self.xtl1 = -self.xt0
-                    self.dx0 = (self.xtl1 - self.xtl) * self.framestep / (self.fr2 - iii)
-                    self.dx = (- self.xtr - self.xtl - self.dx0 * ((self.fr2 - iii) / self.framestep + 3)) / (
-                            (self.fr2 - iii) / self.framestep - 3)
-                S = self.amplitude / 2 * math.sin(self.alpha01 * iii)
+                    self.dx0 = (self.xtl1 - self.xtl) * self.framestep / (self.params["FR2"] - iii)
+                    self.dx = (- self.xtr - self.xtl - self.dx0 * ((self.params["FR2"] - iii) / self.framestep + 3)) / (
+                            (self.params["FR2"] - iii) / self.framestep - 3)
+                S = self.params["AMPLITUDE"] / 2 * math.sin(self.alpha01 * iii)
                 self.ytr = -S - self.d10
                 self.ytl = -S + self.d10
-                self.ztr = -self.gait_height
+                self.ztr = -self.params["GAIT_HEIGHT"]
                 if iii == 0:
-                    self.ztr = -self.gait_height + self.step_height / 3
+                    self.ztr = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] / 3
                 elif iii == self.framestep:
-                    self.ztr = -self.gait_height + self.step_height * 2 / 3
-                elif iii == self.fr2 - self.framestep:
-                    self.ztr = -self.gait_height + self.step_height / 4
-                elif iii == self.fr2 - 2 * self.framestep:
-                    self.ztr = -self.gait_height + self.step_height * 2 / 4
-                elif iii == self.fr2 - 3 * self.framestep:
-                    self.ztr = -self.gait_height + self.step_height * 3 / 4
+                    self.ztr = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] * 2 / 3
+                elif iii == self.params["FR2"] - self.framestep:
+                    self.ztr = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] / 4
+                elif iii == self.params["FR2"] - 2 * self.framestep:
+                    self.ztr = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] * 2 / 4
+                elif iii == self.params["FR2"] - 3 * self.framestep:
+                    self.ztr = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] * 3 / 4
                 else:
-                    self.ztr = -self.gait_height + self.step_height
+                    self.ztr = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"]
                 if iii == 0 or iii == self.framestep or iii == 2 * self.framestep:
                     self.xtr += self.dx0
                     self.ytr = -64 + self.dy0 * iii
-                elif iii == self.fr2 - self.framestep or iii == self.fr2 - 2 * self.framestep or iii == self.fr2 - 3 * self.framestep:
+                elif iii == self.params["FR2"] - self.framestep or iii == self.params["FR2"] - 2 * self.framestep or iii == self.params["FR2"] - 3 * self.framestep:
                     self.xtr += self.dx0
-                    self.ytr = -64 + self.dy0 * 3 * self.framestep - self.dy * (self.fr2 - 3 * self.framestep) / 2 + self.dy0 * (
-                            iii - (self.fr2 - 3 * self.framestep))
+                    self.ytr = -64 + self.dy0 * 3 * self.framestep - self.dy * (self.params["FR2"] - 3 * self.framestep) / 2 + self.dy0 * (
+                            iii - (self.params["FR2"] - 3 * self.framestep))
                 else:
                     self.xtr += self.dx
                     self.ytr = - 64 + self.dy0 * 3 * self.framestep - self.dy * iii / 2
-                    self.wr = self.wr_old + (self.wr_target - self.wr_old) * (iii) / (self.fr2 - self.hovernum * self.framestep)
-                    self.wl = self.wl_old + (self.wl_target - self.wl_old) * (iii) / (self.fr2 - self.hovernum * self.framestep)
+                    self.wr = self.wr_old + (self.wr_target - self.wr_old) * (iii) / (self.params["FR2"] - self.hovernum * self.framestep)
+                    self.wl = self.wl_old + (self.wl_target - self.wl_old) * (iii) / (self.params["FR2"] - self.hovernum * self.framestep)
 
                 self.xtl += self.dx0
                 self.ytl = -S + self.d10 + self.dy0 * iii
@@ -591,55 +587,55 @@ class MotionSim(object):
 
                     self.xt0, self.dy0, self.dy = self.step_length_planer(self.second_step_length, self.side_length, self.framestep, self.hovernum)
                     self.xtr1 = self.xtr
-                    self.ztr = -self.gait_height
+                    self.ztr = -self.params["GAIT_HEIGHT"]
                     if self.cycle == self.number_of_cycles - 1:
                         xtr2 = 0
                     else:
                         xtr2 = -self.xt0
-                    self.dx0 = (xtr2 - self.xtr1) * self.framestep / self.fr2
-                    self.dx = - self.dx0 * (self.fr2 + self.hovernum * self.framestep) / (self.fr2 - self.hovernum * self.framestep)
+                    self.dx0 = (xtr2 - self.xtr1) * self.framestep / self.params["FR2"]
+                    self.dx = - self.dx0 * (self.params["FR2"] + self.hovernum * self.framestep) / (self.params["FR2"] - self.hovernum * self.framestep)
                 iii = (self.walk_cycle_step - self.walk_cycle_steps_each_leg) * self.framestep
-                if 2 * self.framestep < iii < self.fr2 - 4 * self.framestep:
+                if 2 * self.framestep < iii < self.params["FR2"] - 4 * self.framestep:
                     self.xt0, self.dy0, self.dy = self.step_length_planer(self.second_step_length, self.side_length, self.framestep, self.hovernum)
                     if self.cycle == self.number_of_cycles - 1:
                         xtr2 = 0
                     else:
                         xtr2 = -self.xt0
-                    self.dx0 = (xtr2 - self.xtr) * self.framestep / (self.fr2 - iii)
-                    self.dx = (- self.xtr - self.xtl - self.dx0 * ((self.fr2 - iii) / self.framestep + 3)) / (
-                            (self.fr2 - iii) / self.framestep - 3)
-                S = -self.amplitude / 2 * math.sin(self.alpha01 * iii)
+                    self.dx0 = (xtr2 - self.xtr) * self.framestep / (self.params["FR2"] - iii)
+                    self.dx = (- self.xtr - self.xtl - self.dx0 * ((self.params["FR2"] - iii) / self.framestep + 3)) / (
+                            (self.params["FR2"] - iii) / self.framestep - 3)
+                S = -self.params["AMPLITUDE"] / 2 * math.sin(self.alpha01 * iii)
                 self.ytr = -S - self.d10
                 self.ytl = -S + self.d10
-                self.ztl = -self.gait_height
+                self.ztl = -self.params["GAIT_HEIGHT"]
                 if iii == 0:
-                    self.ztl = -self.gait_height + self.step_height / 3
+                    self.ztl = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] / 3
                 elif iii == self.framestep:
-                    self.ztl = -self.gait_height + self.step_height * 2 / 3
-                elif iii == self.fr2 - self.framestep:
-                    self.ztl = -self.gait_height + self.step_height / 4
-                elif iii == self.fr2 - 2 * self.framestep:
-                    self.ztl = -self.gait_height + self.step_height * 2 / 4
-                elif iii == self.fr2 - 3 * self.framestep:
-                    self.ztl = -self.gait_height + self.step_height * 3 / 4
+                    self.ztl = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] * 2 / 3
+                elif iii == self.params["FR2"] - self.framestep:
+                    self.ztl = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] / 4
+                elif iii == self.params["FR2"] - 2 * self.framestep:
+                    self.ztl = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] * 2 / 4
+                elif iii == self.params["FR2"] - 3 * self.framestep:
+                    self.ztl = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"] * 3 / 4
                 else:
-                    self.ztl = -self.gait_height + self.step_height
+                    self.ztl = -self.params["GAIT_HEIGHT"] + self.params["STEP_HEIGHT"]
                 if self.cycle == self.number_of_cycles - 1:
-                    if iii == (self.fr2 - self.framestep):
-                        self.ztl = -self.gait_height
+                    if iii == (self.params["FR2"] - self.framestep):
+                        self.ztl = -self.params["GAIT_HEIGHT"]
                         self.ytl = S + self.d10
                 if iii == 0 or iii == self.framestep or iii == 2 * self.framestep:
                     self.xtl += self.dx0
                     self.ytl = S + self.d10 + self.dy0 * iii
-                elif iii == self.fr2 - self.framestep or iii == self.fr2 - 2 * self.framestep or iii == self.fr2 - 3 * self.framestep:
+                elif iii == self.params["FR2"] - self.framestep or iii == self.params["FR2"] - 2 * self.framestep or iii == self.params["FR2"] - 3 * self.framestep:
                     self.xtl += self.dx0
-                    self.ytl = S + 64 + self.dy0 * 3 * self.framestep - self.dy * (self.fr2 - self.hovernum * self.framestep) + self.dy0 * (
-                            iii - (self.fr2 - 3 * self.framestep))
+                    self.ytl = S + 64 + self.dy0 * 3 * self.framestep - self.dy * (self.params["FR2"] - self.hovernum * self.framestep) + self.dy0 * (
+                            iii - (self.params["FR2"] - 3 * self.framestep))
                 else:
                     self.xtl += self.dx
                     self.ytl = S + 64 + self.dy0 * 3 * self.framestep - self.dy * (iii - 3 * self.framestep)
-                    self.wr = self.wr_target * (1 - iii / (self.fr2 - self.hovernum * self.framestep) * 2)
-                    self.wl = self.wl_target * (1 - iii / (self.fr2 - self.hovernum * self.framestep) * 2)
+                    self.wr = self.wr_target * (1 - iii / (self.params["FR2"] - self.hovernum * self.framestep) * 2)
+                    self.wl = self.wl_target * (1 - iii / (self.params["FR2"] - self.hovernum * self.framestep) * 2)
                 self.xtr += self.dx0
                 self.ytr += self.dy0
                 if self.ytl < 54:
@@ -657,8 +653,8 @@ class MotionSim(object):
 
 
 class BaseAgent(object):
-    def __init__(self):
-        self.motion = MotionSim()
+    def __init__(self, random_mode=False, foot_only_mode=False):
+        self.motion = MotionSim(random_mode=random_mode, foot_only_mode=foot_only_mode)
         self.prev_positions = None
 
     def act(self, state):
@@ -673,6 +669,7 @@ class BaseAgent(object):
 
         return self.prev_positions
 #         return new_positions
+
 
 if __name__ == "__main__":
     print('This is not main module!')
