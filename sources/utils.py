@@ -55,13 +55,35 @@ class StarkitRobot(RobotComponent):
             ]
         super().__init__(0, "Telo_Surrogat", joint_names=self._join_names)
         self.imu = Dummy("Dummy_H")
-        self._collision_collection = sim.simGetCollectionHandle('Telo_Surrogat')
+
+        self._hand_collections = [sim.simGetCollectionHandle(name) for name in ["LeftHand", "RightHand"]]
+        self._leg_collections = [sim.simGetCollectionHandle(name) for name in ["LeftLeg", "RightLeg"]]
+        self._floor_collection = sim.simGetCollectionHandle("Floor")
+        self._head_collection = sim.simGetCollectionHandle("Head")
+        self._body_collection = sim.simGetCollectionHandle("Body")
+
         self.initial_configuration = self.get_configuration_tree()
 
-    def check_collision(self):
-        handle = sim.sim_handle_all
-        result, pairHandles = sim.simCheckCollision(self._collision_collection, handle) == 1
-        return sim.simCheckCollision(self._collision_collection, handle) == 1
+    def check_self_collision(self):
+        result = sim.simCheckCollision(*self._hand_collections) == 1
+        result |= sim.simCheckCollision(*self._leg_collections) == 1
+        result |= sim.simCheckCollision(self._head_collection, self._body_collection) == 1
+        for limb in (self._hand_collections + self._leg_collections):
+            for main_part in [self._head_collection, self._body_collection]:
+                result |= sim.simCheckCollision(limb, main_part) == 1
+
+        for hand in self._hand_collections:
+            for leg in self._leg_collections:
+                result |= sim.simCheckCollision(hand, leg) == 1
+        return result
+
+    def check_floor_collision(self):
+        elements = [self._head_collection, self._body_collection] + self._hand_collections
+        result = False
+        for element in elements:
+            result |= sim.simCheckCollision(self._floor_collection, element) == 1
+
+        return result
 
 
 class VelocityAliveReward(object):
@@ -76,7 +98,7 @@ class VelocityAliveReward(object):
         self._target_velocity = np.array([1, 0])
 
         self._fall_lower_bound = 0
-        self._fall_upper_bound = 30
+        self._fall_upper_bound = 40
         self._positions_queue = [self._start_position, ]
         self._current_quat = None
         self._current_ctrl = None
@@ -97,6 +119,8 @@ class VelocityAliveReward(object):
         fall_prob = max(min(fall_metric, self._fall_upper_bound), self._fall_lower_bound) - self._fall_lower_bound
         fall_prob /= self._fall_upper_bound - self._fall_lower_bound
         if zpos < 0.3:
+            fall_prob = 1
+        if self._robot.check_floor_collision():
             fall_prob = 1
 
         info = dict(
@@ -130,7 +154,7 @@ class VelocityAliveReward(object):
         return velocity_reward, info
 
     def _get_smooth_reward(self):
-        smooth_reward = -((self._prev_ctrl - self._current_ctrl) ** 2).sum()**.5 / 2 / np.pi
+        smooth_reward = -3 * ((self._prev_ctrl - self._current_ctrl) ** 2).sum()**.5 / np.pi
 
         info = dict(
             smooth_reward=smooth_reward
@@ -139,7 +163,7 @@ class VelocityAliveReward(object):
 
     def _get_collision_reward(self):
         collision_reward = 0
-        if self._robot.check_collision():
+        if self._robot.check_self_collision():
             collision_reward = -1
 
         info = dict(
@@ -149,7 +173,7 @@ class VelocityAliveReward(object):
 
     def _done(self):
         fall_prob, _ = self._get_fall_prob()
-        if fall_prob > 0.6:
+        if fall_prob > 0.6 or self._robot.check_self_collision():
             return True
         return False
 
@@ -199,7 +223,7 @@ class SurrogatPyRepEnvironment(gym.Env):
          headless_mode: bool = False,
          foot_only_mode: bool = False,
     ):
-        self.seed()
+        # self.seed()
         self._headless_mode = headless_mode
         self._pr = PyRep()
         self._pr.launch(scene, headless=headless_mode)
@@ -249,6 +273,20 @@ class SurrogatPyRepEnvironment(gym.Env):
         imu_quat = self._robot_quaternion()
         state = np.hstack([joint_positions, imu_quat])
         return state
+
+    def replay_step(self, state):
+        joint_positions = state[:-4]
+        self._robot.set_joint_target_positions(joint_positions)
+        self._robot.set_joint_positions(joint_positions)
+        self._pr.step()
+
+        state = self._get_state()
+        r, done, info = self._reward_calc.compute_reward(self._robot_position(), state, self._robot)
+        info.update(
+            action=joint_positions,
+            state=state
+        )
+        return state, r, done, info
 
     def step(self, action):
         self._robot.set_joint_target_positions(action)
