@@ -284,15 +284,15 @@ class CombinedReward(object):
         self._fall_lower_bound = 0
         self._fall_upper_bound = 24
         self._target_velocity = np.array([1, 0])
-        self._maximum_velocity_abs_limit = 2
+        self._maximum_velocity_abs_limit = 0.45
         self._maximum_mean_joint_distance = 0.06
         self._minimum_mean_joint_distance = 0.01
         self._single_joint_max_abs_force = 1.1
         self._single_joint_min_abs_force = 0.3
         self._fall_reward_alpha = 1
-        self._velocity_reward_alpha = 1
+        self._velocity_reward_alpha = 5
         self._smooth_reward_alpha = 1
-        self._force_reward_alpha = 1
+        self._force_reward_alpha = 2
         self._smooth_reward_iter_count = 30
 
         self._imu_positions_queue = None
