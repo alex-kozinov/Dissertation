@@ -60,7 +60,7 @@ class Mlp(Module):
 
 
 class ReplayBuffer(object):
-    def __init__(self, state_dim, action_dim, max_size=int(1e6)):
+    def __init__(self, state_dim, action_dim, max_size=int(4e5)):
         self.max_size = max_size
         self.ptr = 0
         self.size = 0
@@ -106,6 +106,7 @@ class Actor(Module):
         super().__init__()
         self.action_dim = action_dim
         self.net = Mlp(state_dim, [256, 256], 2 * action_dim)
+        # self.net = Mlp(state_dim, [64, 64], 2 * action_dim)
 
     def forward(self, obs):
         mean, log_std = self.net(obs).split([self.action_dim, self.action_dim], dim=1)
