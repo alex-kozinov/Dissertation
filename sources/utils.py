@@ -1,5 +1,6 @@
 from pyrep import PyRep
-from pyrep.objects import Dummy
+from pyrep.objects import Dummy, Shape
+from pyrep.const import PrimitiveShape
 from pyrep.robots.robot_component import RobotComponent
 from pyrep.backend import sim, simConst
 
@@ -144,6 +145,74 @@ class StarkitRobot(RobotComponent):
         low = -high
         return low, high
 
+
+class PushingLauncher(object):
+    def __init__(self, target, step_delay=60, alive_step=30):
+        self._target = target
+        self._step_delay = step_delay
+        self._distance_from_target = 0.3
+        self._min_force = 30
+        self._max_force = 37
+        self._current_step = 0
+        self._alive_step = alive_step
+        self._balls = []
+        self._creation_step = []
+
+    def reset(self):
+        self._current_step = 0
+        self._creation_step = []
+        while len(self._balls):
+            self._balls[0].remove()
+            self._balls.pop(0)
+
+    def _get_ball_spawn_position(self):
+        target_pos = self._target.get_position()
+        angle = np.random.rand() * 2 * np.pi
+        displacement = np.array([np.cos(angle), np.sin(angle), 0]) * self._distance_from_target
+        ball_position = target_pos + displacement
+        return ball_position
+
+    def _apply_force(self, ball):
+        ball_pos = ball.get_position()
+        target_pos = self._target.get_position()
+        direction = target_pos - ball_pos
+        normalized_direction = direction / np.linalg.norm(direction)
+        force_abs = np.random.rand() * (self._max_force - self._min_force) + self._min_force
+        force = force_abs * normalized_direction
+        ball.add_force(
+            position=np.zeros(3),
+            force=force
+        )
+
+    def _throw_ball(self):
+        radius = 0.13
+        ball_position = self._get_ball_spawn_position()
+
+        ball = Shape.create(
+            mass=0.3,
+            type=PrimitiveShape.SPHERE,
+            size=list(np.ones(3) * radius),
+            color=[1.0, 0.1, 0.1],
+            position=ball_position,
+            static=False,
+            respondable=True
+        )
+        self._balls.append(ball)
+        self._creation_step.append(self._current_step)
+        self._apply_force(ball)
+
+    def step(self):
+        if self._current_step != 0 and self._current_step % self._step_delay == 0:
+            self._throw_ball()
+
+        if len(self._creation_step) and (self._current_step - self._creation_step[0]) >= self._alive_step:
+            self._creation_step.pop(0)
+            self._balls[0].remove()
+            self._balls.pop(0)
+
+        self._current_step += 1
+
+
 class CombinedReward(object):
     def __init__(self, simulation):
         self._simulation = simulation
@@ -185,23 +254,24 @@ class CombinedReward(object):
             self._imu_positions_queue.pop(0)
 
     def _get_fall_prob(self):
-        zyx = self._quat_to_euler(self._simulation.robot.get_imu_quaternion())
-        pos = self._simulation.robot.get_imu_position()
+        z_angle, y_angle, x_angle = self._quat_to_euler(self._simulation.robot.get_imu_quaternion())
+        x_pos, y_pos, z_pos = self._simulation.robot.get_imu_position()
 
-        yx = zyx[1:]
-        zpos = pos[2]
-        fall_metric = (yx ** 2).sum()**.5
+        yx_angles = np.array(y_angle, x_angle)
+        fall_metric = (yx_angles ** 2).sum()**.5
         fall_prob = max(min(fall_metric, self._fall_upper_bound), self._fall_lower_bound) - self._fall_lower_bound
         fall_prob /= self._fall_upper_bound - self._fall_lower_bound
         info = dict(
             fall_metric=fall_metric,
-            y=yx[0],
-            x=yx[1],
-            zpos=zpos,
+            y_angle=y_angle,
+            x_angle=x_angle,
+            x_pos=x_pos,
+            y_pos=y_pos,
+            z_pos=z_pos,
             floor_collision=False
         )
 
-        if zpos < 0.3:
+        if z_pos < 0.3:
             fall_prob = 1
 
         if self._simulation.robot.check_floor_collision():
@@ -347,7 +417,7 @@ class Simulation(object):
 
         self.robot = StarkitRobot(foot_only_mode=foot_only_mode)
         self.goal = self._create_goal()
-
+        self.pushing_launcher = PushingLauncher(self.robot.imu)
         self._initial_robot_configuration = self.robot.get_configuration_tree()
 
     @staticmethod
@@ -398,10 +468,12 @@ class Simulation(object):
 
     def step(self):
         self._pr.step()
+        self.pushing_launcher.step()
 
     def reset(self):
         self._pr.set_configuration_tree(self._initial_robot_configuration)
         self.robot.reset()
+        self.pushing_launcher.reset()
         self._pr.step()
 
 
