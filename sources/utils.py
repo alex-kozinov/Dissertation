@@ -147,12 +147,14 @@ class StarkitRobot(RobotComponent):
 
 
 class PushingLauncher(object):
-    def __init__(self, target, step_delay=60, alive_step=30):
+    def __init__(self, target, step_min_delay=30, step_max_delay=40, alive_step=30):
         self._target = target
-        self._step_delay = step_delay
+        self._step_min_delay = step_min_delay
+        self._step_max_delay = step_max_delay
+        self._step_to_throw = np.random.randint(low=step_min_delay, high=step_max_delay)
         self._distance_from_target = 0.3
-        self._min_force = 30
-        self._max_force = 37
+        self._min_force = 36
+        self._max_force = 45
         self._current_step = 0
         self._alive_step = alive_step
         self._balls = []
@@ -160,6 +162,7 @@ class PushingLauncher(object):
 
     def reset(self):
         self._current_step = 0
+        self._step_to_throw = np.random.randint(low=self._step_min_delay, high=self._step_max_delay)
         self._creation_step = []
         while len(self._balls):
             self._balls[0].remove()
@@ -185,11 +188,11 @@ class PushingLauncher(object):
         )
 
     def _throw_ball(self):
-        radius = 0.13
+        radius = 0.15
         ball_position = self._get_ball_spawn_position()
 
         ball = Shape.create(
-            mass=0.3,
+            mass=0.4,
             type=PrimitiveShape.SPHERE,
             size=list(np.ones(3) * radius),
             color=[1.0, 0.1, 0.1],
@@ -202,8 +205,10 @@ class PushingLauncher(object):
         self._apply_force(ball)
 
     def step(self):
-        if self._current_step != 0 and self._current_step % self._step_delay == 0:
+        self._step_to_throw -= 1
+        if self._step_to_throw == 0:
             self._throw_ball()
+            self._step_to_throw = np.random.randint(low=self._step_min_delay, high=self._step_max_delay)
 
         if len(self._creation_step) and (self._current_step - self._creation_step[0]) >= self._alive_step:
             self._creation_step.pop(0)
@@ -217,15 +222,21 @@ class CombinedReward(object):
     def __init__(self, simulation):
         self._simulation = simulation
         self._fall_lower_bound = 0
-        self._fall_upper_bound = 24
+        self._fall_upper_bound = 30
         self._target_velocity = np.array([1, 0])
         self._maximum_velocity_abs_limit = 0.45
+        self._velocity_proj_key_points = [
+            [0, 0],
+            [0.25, 0.5],
+            [0.4, 0.6],
+            [1, 1]
+        ]
         self._maximum_mean_joint_distance = 0.06
         self._minimum_mean_joint_distance = 0.01
-        self._single_joint_max_abs_force = 1.1
+        self._single_joint_max_abs_force = 0.8
         self._single_joint_min_abs_force = 0.3
         self._fall_reward_alpha = 1
-        self._velocity_reward_alpha = 5
+        self._velocity_reward_alpha = 2
         self._smooth_reward_alpha = 1
         self._force_reward_alpha = 2
         self._smooth_reward_iter_count = 30
@@ -302,8 +313,8 @@ class CombinedReward(object):
     def _get_fall_reward(self):
         fall_prob, info = self._get_fall_prob()
 
-        fall_reward = 1 - fall_prob
-
+        # fall_reward = 1 - fall_prob
+        fall_reward = 1
         info.update(
             fall_reward=fall_reward,
             fall_prob=fall_prob
@@ -313,12 +324,19 @@ class CombinedReward(object):
     def _get_velocity_reward(self):
         # TODO: try to replace with imu velocity
         current_velocity = (self._imu_positions_queue[-1] - self._imu_positions_queue[0])[:2] / (self._simulation.dt * len(self._imu_positions_queue))
-        current_velocity_abs = (current_velocity**2).sum() ** .5
-        target_velocity_abs = min(current_velocity_abs, self._maximum_velocity_abs_limit)
-        current_velocity *= target_velocity_abs / current_velocity_abs
+        # current_velocity_abs = (current_velocity**2).sum() ** .5
+        # target_velocity_abs = min(current_velocity_abs, self._maximum_velocity_abs_limit)
+        # current_velocity *= target_velocity_abs / current_velocity_abs
 
         velocity_cross_prod = current_velocity @ self._target_velocity
-        velocity_reward = velocity_cross_prod / self._maximum_velocity_abs_limit
+
+        velocity_reward = 0
+        for prev_point, curr_point in zip(self._velocity_proj_key_points[:-1], self._velocity_proj_key_points[1:]):
+            if prev_point[0] <= velocity_cross_prod <= curr_point[0]:
+                alpha = (velocity_cross_prod - prev_point[0]) / (curr_point[0] - prev_point[0])
+
+                velocity_reward = (curr_point[1] - prev_point[1]) * alpha + prev_point[1]
+                break
 
         info = dict(
             current_velocity=current_velocity,
@@ -349,12 +367,15 @@ class CombinedReward(object):
         min_sum_forces = self._single_joint_min_abs_force * len(forces)
         max_sum_forces = self._single_joint_max_abs_force * len(forces)
         sum_forces_normalized = (max(min_sum_forces, min(sum_forces, max_sum_forces)) - min_sum_forces) / (max_sum_forces - min_sum_forces)
-
+        # max_force = np.max(np.abs(forces))
+        # max_force_reward = 2 - min(2, max(max_force, 1))
         force_reward = 1 - sum_forces_normalized
         info = dict(
             sum_forces=sum_forces,
             sum_forces_normalized=sum_forces_normalized,
-            force_reward=force_reward
+            force_reward=force_reward,
+            # max_force=max_force,
+            # max_force_reward=max_force_reward,
         )
         return force_reward, info
 
@@ -417,7 +438,7 @@ class Simulation(object):
 
         self.robot = StarkitRobot(foot_only_mode=foot_only_mode)
         self.goal = self._create_goal()
-        self.pushing_launcher = PushingLauncher(self.robot.imu)
+        # self.pushing_launcher = PushingLauncher(self.robot.imu)
         self._initial_robot_configuration = self.robot.get_configuration_tree()
 
     @staticmethod
@@ -468,12 +489,12 @@ class Simulation(object):
 
     def step(self):
         self._pr.step()
-        self.pushing_launcher.step()
+        # self.pushing_launcher.step()
 
     def reset(self):
         self._pr.set_configuration_tree(self._initial_robot_configuration)
         self.robot.reset()
-        self.pushing_launcher.reset()
+        # self.pushing_launcher.reset()
         self._pr.step()
 
 

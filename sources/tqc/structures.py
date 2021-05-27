@@ -60,7 +60,7 @@ class Mlp(Module):
 
 
 class ReplayBuffer(object):
-    def __init__(self, state_dim, action_dim, max_size=int(4e5)):
+    def __init__(self, state_dim, action_dim, max_size=int(50000)):
         self.max_size = max_size
         self.ptr = 0
         self.size = 0
